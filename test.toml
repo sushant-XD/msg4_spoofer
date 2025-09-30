@@ -1,0 +1,15 @@
+[log]
+level = "debug"
+
+[rf]
+#rf_args = "type=b200,master_clock_rate=23.04e6"
+file_path = "/home/sushant/Wireless/msg4_spoofer/iq.fc32"
+sample_rate = 23040000
+frequency = 1842500000
+N_id = 1
+ssb_numerology = 0
+nof_prb = 106
+
+[pdcch]
+interleaved = false
+rnti = 17926
