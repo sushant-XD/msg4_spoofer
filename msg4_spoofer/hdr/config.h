@@ -18,6 +18,8 @@
 
 typedef enum spoofer_error_t {
   SUCCESS = 0,
+  INIT_ERROR,
+  CONFIG_ERROR,
   FILE_ERROR,
   UHD_ERROR,
   ZMQ_ERROR,
