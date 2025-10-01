@@ -7,12 +7,8 @@
 #define PRB_DEFAULT 106
 
 #include "logging.h"
-#include "toml.hpp"
-
-typedef struct pdcch_config_s {
-  bool interleaved;
-  uint64_t rnti;
-} pdcch_config_t;
+#include "srsran/phy/sync/ssb.h"
+#include "toml.h"
 
 typedef struct rf_config_s {
   std::string file_path;
@@ -31,10 +27,8 @@ typedef struct ssb_config_s {
 } ssb_config_t;
 
 typedef struct agent_config_s {
-  influxdb_config_t influx;
   rf_config_t rf;
   ssb_config_t ssb;
-  pdcch_config_t pdcch;
 } agent_config_t;
 
 static agent_config_t load(std::string config_path) {
@@ -49,14 +43,11 @@ static agent_config_t load(std::string config_path) {
   conf.rf.N_id = toml["rf"]["N_id"].value_or(0);
   conf.rf.rf_args = toml["rf"]["rf_args"].value_or("");
 
-  conf.pdcch.interleaved = toml["pdcch"]["interleaved"].value_or(false);
-  conf.pdcch.rnti = toml["pdcch"]["rnti"].value_or(0);
-
   conf.ssb.ssb_pattern = SRSRAN_SSB_PATTERN_A;
   conf.ssb.ssb_scs = srsran_subcarrier_spacing_15kHz;
   conf.ssb.duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
 
-  std::string log_level_str = toml["log"]["level"].value_or("error");
+  std::string log_level_str = "error";
 
   if (log_level_str == "error")
     log_level = ERROR;
