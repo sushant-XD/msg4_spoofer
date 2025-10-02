@@ -23,8 +23,7 @@ typedef enum spoofer_error_t {
   FILE_ERROR,
   UHD_ERROR,
   ZMQ_ERROR,
-  SAMPLE_ERROR,
-  INVALID_RF_TYPE
+  SAMPLE_ERROR
 } spoofer_error_e;
 
 typedef struct rf_config_s {

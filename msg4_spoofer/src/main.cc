@@ -1,6 +1,7 @@
 #include "config.h"
 #include "data_source.h"
 #include "logging.h"
+#include "rf_base.h"
 #include "srsran/srsran.h"
 #include <chrono>
 #include <iostream>
@@ -13,14 +14,16 @@
 #define MAX_LEN 70176
 
 spoofer_error_e check_config_validity(spoofer_config_t &config) {
-  if (config.rf.device_name != "uhd" && config.rf.device_name != "zmq")
+  if (config.rf.device_name != "uhd" && config.rf.device_name != "zmq") {
     LOG_ERROR("invalid device name");
-  return CONFIG_ERROR;
+    return CONFIG_ERROR;
+  }
+  if (config.prach.num_ra_preambles == 0 ||
+      config.prach.num_ra_preambles > 64) {
 
-  if (config.prach.num_ra_preambles == 0 || config.prach.num_ra_preambles > 64)
     LOG_ERROR("invalid  number of preambles");
-  return CONFIG_ERROR;
-
+    return CONFIG_ERROR;
+  }
   return SUCCESS;
 }
 
@@ -66,10 +69,15 @@ int main(int argc, char *argv[]) {
 
   LOG_INFO("PRACH CONFIGURED");
 
-  // 1. Determine the size of one preamble signal (N_seq + N_cp)
+  LOG_INFO("Creating RF instance for: %s", conf.rf.device_name.c_str());
+  std::unique_ptr<RFBase> rf_dev = create_rf_instance(conf);
+  if (!rf_dev) {
+    LOG_ERROR("Failed to create RF instance. Exiting.");
+    return EXIT_FAILURE;
+  }
+
   size_t preamble_len = prach.N_seq + prach.N_cp;
 
-  // 2. Allocate a master buffer to hold all 64 preambles
   std::vector<cf_t *> preambles(conf.prach.num_ra_preambles);
   for (int i = 0; i < preambles.size(); ++i) {
     preambles[i] = srsran_vec_cf_malloc(preamble_len);
@@ -81,14 +89,22 @@ int main(int argc, char *argv[]) {
   while (true) {
 
     cf_t *tx_buffer = preambles[current_seq_idx];
+    std::vector<std::complex<float>> tx_vector(tx_buffer,
+                                               tx_buffer + preamble_len);
 
-    // Placeholder for actual SDR transmission logic
-    // src->transmit(tx_buffer, preamble_len);
+    if (rf_dev->transmit(conf, tx_vector) != SUCCESS) {
+      LOG_ERROR("Error during transmission.");
+      return CONFIG_ERROR;
+    }
 
     current_seq_idx = (current_seq_idx + 1) % conf.prach.num_ra_preambles;
     if (conf.prach.time_delay > 0) {
       std::this_thread::sleep_for(
           std::chrono::milliseconds(conf.prach.time_delay));
     }
+  }
+
+  for (auto &preamble : preambles) {
+    free(preamble);
   }
 }

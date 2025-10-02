@@ -9,35 +9,38 @@ void RF_UHD::handle_uhd_error(uhd_error err) {
 }
 
 RF_UHD::RF_UHD(const spoofer_config_t &config) {
-  std::cout << "Initializing RF_UHD device..." << std::endl;
 
-  uint32_t nof_channels = 1;
-  const uhd::device_addr_t dev_addr(config.rf.device_args);
+  try {
+    std::cout << "Initializing RF_UHD device..." << std::endl;
 
-  // The core initialization call
-  handle_uhd_error(rf_dev.usrp_make(dev_addr, nof_channels));
+    uint32_t nof_channels = 1;
+    const uhd::device_addr_t dev_addr(config.rf.device_args);
 
-  // --- 2. Configuration (Gain, Rate, Frequency) ---
-  size_t channel_no = 0;
-  float actual_frequency = 0.0;
+    handle_uhd_error(rf_dev.usrp_make(dev_addr, nof_channels));
 
-  handle_uhd_error(rf_dev.set_tx_gain(channel_no, config.rf.tx_gain));
-  handle_uhd_error(rf_dev.set_tx_rate(config.rf.srate));
-  handle_uhd_error(
-      rf_dev.set_tx_freq(0, config.rf.frequency, actual_frequency));
+    size_t channel_no = 0;
+    float actual_frequency = 0.0;
 
-  float actual_rx_frequency = 0.0;
-  handle_uhd_error(rf_dev.set_rx_gain(channel_no, config.rf.rx_gain));
-  handle_uhd_error(rf_dev.set_rx_rate(config.rf.srate));
-  handle_uhd_error(
-      rf_dev.set_rx_freq(channel_no, config.rf.frequency, actual_rx_frequency));
+    handle_uhd_error(rf_dev.set_tx_gain(channel_no, config.rf.tx_gain));
+    handle_uhd_error(rf_dev.set_tx_rate(config.rf.srate));
+    handle_uhd_error(
+        rf_dev.set_tx_freq(0, config.rf.frequency, actual_frequency));
 
-  // --- 4. Streamer Setup ---
-  size_t max_tx_samps = 0;
-  handle_uhd_error(rf_dev.get_tx_stream(max_tx_samps));
-  size_t max_rx_samps = 0;
-  handle_uhd_error(rf_dev.get_rx_stream(max_rx_samps));
-  std::cout << "RF_UHD device initialized and configured." << std::endl;
+    float actual_rx_frequency = 0.0;
+    handle_uhd_error(rf_dev.set_rx_gain(channel_no, config.rf.rx_gain));
+    handle_uhd_error(rf_dev.set_rx_rate(config.rf.srate));
+    handle_uhd_error(rf_dev.set_rx_freq(channel_no, config.rf.frequency,
+                                        actual_rx_frequency));
+
+    size_t max_tx_samps = 0;
+    handle_uhd_error(rf_dev.get_tx_stream(max_tx_samps));
+    size_t max_rx_samps = 0;
+    handle_uhd_error(rf_dev.get_rx_stream(max_rx_samps));
+    std::cout << "RF_UHD device initialized and configured." << std::endl;
+  } catch (const uhd::exception &e) {
+
+    throw std::runtime_error(e.what());
+  }
 }
 
 spoofer_error_e
