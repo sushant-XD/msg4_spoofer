@@ -1,13 +1,17 @@
-#ifndef RF_UHD_H
-#define RF_UHD_H
-
+#include "rf.h"
 #include "rf_base.h"
 #include <uhd/stream.hpp>
 #include <uhd/usrp/multi_usrp.hpp>
 
 class RF_UHD : public RFBase {
 public:
-  uuagent_error_e transmit(const spoofer_config_t &args) override;
-};
+  RF_UHD(const spoofer_config_t &config);
+  spoofer_error_e
+  transmit(const spoofer_config_t &args,
+           const std::vector<std::complex<float>> &tx_data) override;
+  ~RF_UHD() override = default;
 
-#endif // !RF_UHD_H
+private:
+  void handle_uhd_error(uhd_error err);
+  rf_handler rf_dev;
+};

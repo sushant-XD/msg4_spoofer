@@ -2,21 +2,29 @@
 level = "debug"
 
 [rf]
-# rf_args = "type=b200,master_clock_rate=23.04e6,clock=internal,sync=internal"
-# rf_args = 
-file_path = "/home/sushant/Wireless/msg4_spoofer/iq.fc32"
-sample_rate = 23040000
+freq_offset = 0
+rx_gain = 40.0
+tx_gain = 40.0
+srate = 23.04e6
+
 frequency = 1842500000
+nof_prb = 106
 N_id = 1
 ssb_numerology = 0
-nof_prb = 106
+
+device_name = "uhd"
+device_args = "type=b200"
+
+# device_name = zmq
+
+# file_path = "/home/sushant/Wireless/msg4_spoofer/iq.fc32"
 
 [prach]
 config_idx = 1
 is_nr = true
 hs_flag = false
-freq_offset = 0
 root_sequence_index = 1
 zero_correlation_zone = 0
 num_ra_preambles = 64
+time_delay = 1 # in millisecond
 

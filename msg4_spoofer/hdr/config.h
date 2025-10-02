@@ -1,5 +1,4 @@
-#ifndef CONFIG_H
-#define CONFIG_H
+#pragma once
 
 #define FREQ_DEFAULT 627750000
 #define SRATE_DEFAULT 23040000
@@ -15,6 +14,7 @@
 #include "logging.h"
 #include "srsran/phy/sync/ssb.h"
 #include "toml.h"
+#include <cstring>
 
 typedef enum spoofer_error_t {
   SUCCESS = 0,
@@ -28,13 +28,20 @@ typedef enum spoofer_error_t {
 } spoofer_error_e;
 
 typedef struct rf_config_s {
-  std::string file_path;
-  uint64_t sample_rate;
+  uint32_t freq_offset;
+  float rx_gain;
+  float tx_gain;
+  double srate;
+
   double frequency;
-  const char *rf_args;
-  double gain;
-  uint64_t nof_prb;
+  uint32_t nof_prb;
   uint32_t N_id;
+  uint32_t ssb_numerology;
+
+  std::string device_name;
+  const char *device_args;
+
+  std::string file_path;
 } rf_config_t;
 
 typedef struct ssb_config_s {
@@ -52,6 +59,7 @@ typedef struct prach_config_s {
   uint32_t freq_offset;
   uint32_t num_ra_preambles;
   bool hs_flag;
+  uint64_t time_delay;
   // srsran_tdd_config_t tdd_config; // leave these to default
   // bool enable_successive_cancellation;
   // bool enable_freq_domain_offset_calc;
@@ -67,15 +75,22 @@ static spoofer_config_t load(std::string config_path) {
   printf("Loading config from path: %s\n", config_path.c_str());
   toml::table toml = toml::parse_file(config_path);
   spoofer_config_t conf;
-  conf.rf.file_path = toml["rf"]["file_path"].value_or("");
-  conf.rf.sample_rate = toml["rf"]["sample_rate"].value_or(SRATE_DEFAULT);
-  conf.rf.frequency = toml["rf"]["frequency"].value_or(FREQ_DEFAULT);
-  conf.rf.gain = toml["rf"]["gain"].value_or(GAIN_DEFAULT);
-  conf.rf.nof_prb = toml["rf"]["nof_prb"].value_or(PRB_DEFAULT);
-  conf.rf.N_id = toml["rf"]["N_id"].value_or(0);
-  conf.rf.rf_args = toml["rf"]["rf_args"].value_or(
-      ""); // rf args, default to type: uhd and device: b210 if not available
 
+  conf.rf.freq_offset = toml["rf"]["freq_offset"].value_or(0);
+  conf.rf.rx_gain = toml["rf"]["rx_gain"].value_or(0.0);
+  conf.rf.tx_gain = toml["rf"]["tx_gain"].value_or(0.0);
+  conf.rf.srate = toml["rf"]["srate"].value_or(23.04e6);
+
+  conf.rf.frequency = toml["rf"]["frequency"].value_or(1842.5e6);
+  conf.rf.nof_prb = toml["rf"]["nof_prb"].value_or(106);
+  conf.rf.N_id = toml["rf"]["N_id"].value_or(1);
+  conf.rf.ssb_numerology = toml["rf"]["ssb_numerology"].value_or(0);
+
+  conf.rf.device_name = toml["rf"]["device_name"].value_or("uhd");
+  conf.rf.device_args = toml["rf"]["device_args"].value_or("type=b200");
+  conf.rf.file_path = toml["rf"]["file_path"].value_or("");
+
+  // Preconfigured right now
   conf.ssb.ssb_pattern = SRSRAN_SSB_PATTERN_A;
   conf.ssb.ssb_scs = srsran_subcarrier_spacing_15kHz;
   conf.ssb.duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
@@ -84,14 +99,13 @@ static spoofer_config_t load(std::string config_path) {
       toml["prach"]["config_idx"].value_or(PRACH_CONFIG_IDX_DEFAULT);
   conf.prach.is_nr = toml["prach"]["is_nr"].value_or(true);
   conf.prach.hs_flag = toml["prach"]["hs_flag"].value_or(false);
-  conf.prach.freq_offset =
-      toml["prach"]["freq_offset"].value_or(PRACH_FREQ_OFFSET_DEFAULT);
   conf.prach.root_seq_idx =
       toml["prach"]["root_sequence_index"].value_or(PRACH_ROOT_SEQ_IDX_DEFUALT);
   conf.prach.zero_corr_zone = toml["prach"]["zero_correlation_zone"].value_or(
       PRACH_ZERO_CORR_ZONE_DEFUALT);
   conf.prach.num_ra_preambles = toml["prach"]["num_ra_preambles"].value_or(
       PRACH_NUM_RA_PREAMBLES_DEFAULT);
+  conf.prach.time_delay = toml["prach"]["time_delay"].value_or(1);
 
   std::string log_level_str = toml["log"]["level"].value_or("debug");
 
@@ -106,5 +120,3 @@ static spoofer_config_t load(std::string config_path) {
 
   return conf;
 }
-
-#endif // CONFIG_H

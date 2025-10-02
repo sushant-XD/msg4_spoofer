@@ -214,6 +214,8 @@ if(ENABLE_UHD)
   if(UHD_FOUND)
     include_directories(${UHD_INCLUDE_DIRS})
     link_directories(${UHD_LIBRARY_DIRS})
+  else()
+    message(FATAL_ERROR "UHD library not found")
   endif(UHD_FOUND)
 endif(ENABLE_UHD)
 
@@ -641,3 +643,10 @@ include_directories(lib/include)
 add_subdirectory(lib)
 
 add_subdirectory(msg4_spoofer)
+# Set CMake policy to allow linking to a target defined in a subdirectory.
+cmake_policy(SET CMP0079 NEW)
+
+if(UHD_FOUND)
+  target_link_libraries(msg4_spoofer PRIVATE ${UHD_LIBRARIES})
+  message(STATUS "Linking executable msg4_spoofer to ${UHD_LIBRARIES}")
+endif(UHD_FOUND)
