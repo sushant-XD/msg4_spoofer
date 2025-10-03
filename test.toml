@@ -7,7 +7,7 @@ rx_gain = 40.0
 tx_gain = 40.0
 srate = 23.04e6
 
-frequency = 1842500000
+frequency = 1842.5e6
 nof_prb = 106
 N_id = 1
 ssb_numerology = 0
