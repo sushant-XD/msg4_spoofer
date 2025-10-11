@@ -1,145 +1,136 @@
 #include "rf.h"
-#include <uhd/error.h>
+#include <iostream>
+#include <stdexcept>
+#include <cstring>
+#include <algorithm>
 
-rf_handler::rf_handler() {}
-
-rf_handler::~rf_handler() {}
-
-uhd_error rf_handler::usrp_make(const uhd::device_addr_t &dev_addr_,
-                                uint32_t nof_channels) {
-  uhd_error err = UHD_ERROR_NONE;
-  uhd::device_addr_t dev_addr = dev_addr_;
-
-  // Set transmitter subdevice spec string
-  std::string tx_subdev;
-  if (dev_addr.has_key("tx_subdev_spec")) {
-    tx_subdev = dev_addr.pop("tx_subdev_spec");
-  }
-
-  // Set receiver subdevice spec string
-  std::string rx_subdev;
-  if (dev_addr.has_key("rx_subdev_spec")) {
-    rx_subdev = dev_addr.pop("rx_subdev_spec");
-  }
-
-  // Set over the wire format
-  std::string otw_format = "sc16";
-  if (dev_addr.has_key("otw_format")) {
-    otw_format = dev_addr.pop("otw_format");
-  }
-
-  // Samples-Per-Packet option, 0 means automatic
-  std::string spp;
-  if (dev_addr.has_key("spp")) {
-    spp = dev_addr.pop("spp");
-  }
-
-  // Tx LO frequency
-  if (dev_addr.has_key("lo_freq_tx_hz")) {
-    lo_freq_tx_hz = dev_addr.cast("lo_freq_tx_hz", lo_freq_tx_hz);
-    dev_addr.pop("lo_freq_tx_hz");
-  }
-
-  // Rx LO frequency
-  if (dev_addr.has_key("lo_freq_rx_hz")) {
-    lo_freq_rx_hz = dev_addr.cast("lo_freq_rx_hz", lo_freq_rx_hz);
-    dev_addr.pop("lo_freq_rx_hz");
-  }
-
-  // LO Frequency offset automatic
-  if (dev_addr.has_key("lo_freq_offset_hz")) {
-    lo_freq_offset_hz = dev_addr.cast("lo_freq_offset_hz", lo_freq_offset_hz);
-    dev_addr.pop("lo_freq_offset_hz");
-
-    if (std::isnormal(lo_freq_tx_hz)) {
-      std::cout << "'lo_freq_offset_hz' overrides 'lo_freq_tx_hz' ("
-                << lo_freq_tx_hz / 1e6 << " MHz)\n";
+// Single RF class that handles both UHD and ZMQ
+RF::RF(const spoofer_config_t& config) {
+    // Initialize the srsRAN RF device
+    memset(&rf_device, 0, sizeof(srsran_rf_t));
+    
+    configure_device(config);
+    
+    // Initialize the RF device
+    std::string device_name = config.rf.device_name;
+    // Make a non-const copy for the API
+    std::string device_args_copy = device_args;
+    if (srsran_rf_open_devname(&rf_device, device_name.c_str(), const_cast<char*>(device_args_copy.c_str()), 1) != SRSRAN_SUCCESS) {
+        throw std::runtime_error("Failed to open RF device: " + device_name);
     }
+    
+    // Set sample rate
+    srsran_rf_set_rx_srate(&rf_device, config.rf.srate);
+    srsran_rf_set_tx_srate(&rf_device, config.rf.srate);
+    
+    // Set center frequency  
+    srsran_rf_set_rx_freq(&rf_device, 0, config.rf.frequency);
+    srsran_rf_set_tx_freq(&rf_device, 0, config.rf.frequency);
+    
+    // Set gains
+    srsran_rf_set_rx_gain(&rf_device, config.rf.rx_gain);
+    srsran_rf_set_tx_gain(&rf_device, config.rf.tx_gain);
+    
+    // Start RX and TX streams
+    srsran_rf_start_rx_stream(&rf_device, false);
+    
+    std::cout << "RF device (" << device_name << ") initialized successfully" << std::endl;
+}
 
-    if (std::isnormal(lo_freq_rx_hz)) {
-      std::cout << "'lo_freq_offset_hz' overrides 'lo_freq_rx_hz' ("
-                << lo_freq_rx_hz / 1e6 << " MHz)\n";
+RF::~RF() {
+    srsran_rf_close(&rf_device);
+}
+
+void RF::configure_device(const spoofer_config_t& config) {
+    std::string device_name = config.rf.device_name;
+    
+    if (device_name == "uhd") {
+        // UHD specific arguments
+        device_args = config.rf.device_args;
+        if (device_args.empty()) {
+            device_args = "type=b200";  // Default UHD args
+        }
+    } else if (device_name == "zmq") {
+        // ZMQ specific arguments
+        device_args = config.rf.device_args;
+        if (device_args.empty()) {
+            device_args = "tx_port=tcp://*:2000,rx_port=tcp://localhost:2001,id=enb";
+        }
     }
-  }
+}
 
-  // Make USRP
-  usrp = uhd::usrp::multi_usrp::make(dev_addr);
-  if (err != UHD_ERROR_NONE) {
-    return err;
-  }
+int RF::receive(std::complex<float>* buffer, uint32_t nsamples) {
+    void* buffers[1] = {buffer};
+    int samples_received = srsran_rf_recv_with_time(&rf_device, buffers, nsamples, true, nullptr, nullptr);
+    return samples_received;
+}
 
-  // Set transmitter subdev spec if specified
-  if (not tx_subdev.empty()) {
-    err = set_tx_subdev(tx_subdev);
-    if (err != UHD_ERROR_NONE) {
-      return err;
+int RF::transmit(const std::complex<float>* buffer, uint32_t nsamples, 
+                bool start_of_burst, bool end_of_burst) {
+    void* buffers[1] = {const_cast<std::complex<float>*>(buffer)};
+    int samples_sent = srsran_rf_send_timed(&rf_device, buffers, nsamples, 0, 0.0);
+    return samples_sent;
+}
+
+// File-based RF class for testing/simulation
+RFFile::RFFile(const std::string& rx_file, const std::string& tx_file) 
+    : rx_filename(rx_file), tx_filename(tx_file), rx_file_handle(nullptr), tx_file_handle(nullptr) {
+    
+    if (!rx_filename.empty()) {
+        rx_file_handle = fopen(rx_filename.c_str(), "rb");
+        if (!rx_file_handle) {
+            throw std::runtime_error("Failed to open RX file: " + rx_filename);
+        }
     }
-  }
-
-  // Set receiver subdev spec if specified
-  if (not rx_subdev.empty()) {
-    err = set_rx_subdev(rx_subdev);
-    if (err != UHD_ERROR_NONE) {
-      return err;
+    
+    if (!tx_filename.empty()) {
+        tx_file_handle = fopen(tx_filename.c_str(), "wb");
+        if (!tx_file_handle) {
+            throw std::runtime_error("Failed to open TX file: " + tx_filename);
+        }
     }
-  }
+    
+    std::cout << "File-based RF initialized (RX: " << rx_filename 
+              << ", TX: " << tx_filename << ")" << std::endl;
+}
 
-  // Initialize TX/RX stream args
-  stream_args.cpu_format = "fc32";
-  stream_args.otw_format = otw_format;
-  if (not spp.empty()) {
-    if (spp == "0") {
-      std::cout
-          << "The parameter spp is 0, some UHD versions do not handle it as "
-             "default and receive method will overflow.\n";
+RFFile::~RFFile() {
+    if (rx_file_handle) {
+        fclose(rx_file_handle);
     }
-    stream_args.args.set("spp", spp);
-  }
-  stream_args.channels.resize(nof_channels);
-  for (size_t i = 0; i < (size_t)nof_channels; i++) {
-    stream_args.channels[i] = i;
-  }
+    if (tx_file_handle) {
+        fclose(tx_file_handle);
+    }
+}
 
-  // Try to get dboard name from property tree
-  uhd::property_tree::sptr tree = usrp->get_device()->get_tree();
-  if (tree == nullptr || not tree->exists(TREE_DBOARD_RX_FRONTEND_NAME)) {
-    // Couldn't find dboard name in property tree
-    return err;
-  }
+int RFFile::receive(std::complex<float>* buffer, uint32_t nsamples) {
+    if (!rx_file_handle) {
+        // If no file, generate zeros using proper initialization
+        std::fill(buffer, buffer + nsamples, std::complex<float>(0.0f, 0.0f));
+        return nsamples;
+    }
+    
+    size_t samples_read = fread(buffer, sizeof(std::complex<float>), nsamples, rx_file_handle);
+    
+    // If reached end of file, loop back to beginning
+    if (samples_read < nsamples) {
+        fseek(rx_file_handle, 0, SEEK_SET);
+        size_t remaining = nsamples - samples_read;
+        size_t additional = fread(buffer + samples_read, sizeof(std::complex<float>), 
+                                remaining, rx_file_handle);
+        samples_read += additional;
+    }
+    
+    return samples_read;
+}
 
-  std::string dboard_name =
-      usrp->get_device()
-          ->get_tree()
-          ->access<std::string>(TREE_DBOARD_RX_FRONTEND_NAME)
-          .get();
-
-  // Detect if it a AD9361 based device
-  if (dboard_name.find("FE-RX") != std::string::npos and false) {
-    std::cout << "The device is based on AD9361, get RX stream for checking "
-                 "LIBUSB_TRANSFER_ERROR\n";
-    uint32_t ntrials = 10;
-    do {
-      // If no error getting RX stream, return
-      err = test_ad936x_device(nof_channels);
-      if (err == UHD_ERROR_NONE) {
-        return err;
-      }
-
-      // Otherwise, close USRP and open again
-      usrp = nullptr;
-
-      std::cout << "Failed to open Rx stream, trying to open device again. "
-                << ntrials << " trials left. Waiting for "
-                << FE_RX_RESET_SLEEP_TIME_MS.count() << " ms\n";
-
-      // Sleep
-      // std::this_thread::sleep_for(FE_RX_RESET_SLEEP_TIME_MS);
-
-      // Try once more making the device
-      usrp = uhd::usrp::multi_usrp::make(dev_addr);
-
-    } while (err == UHD_ERROR_NONE and --ntrials != 0);
-  }
-
-  return err;
+int RFFile::transmit(const std::complex<float>* buffer, uint32_t nsamples,
+                    bool start_of_burst, bool end_of_burst) {
+    if (!tx_file_handle) {
+        return nsamples; // Pretend we transmitted
+    }
+    
+    size_t samples_written = fwrite(buffer, sizeof(std::complex<float>), nsamples, tx_file_handle);
+    fflush(tx_file_handle);
+    return samples_written;
 }

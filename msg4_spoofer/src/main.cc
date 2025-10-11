@@ -8,13 +8,10 @@
 #include <srsran/phy/utils/vector.h>
 #include <string>
 #include <thread>
-#include <uhd/error.h>
-#include <uhd/stream.hpp>
-#include <uhd/types/device_addr.hpp>
 #define MAX_LEN 70176
 
 spoofer_error_e check_config_validity(spoofer_config_t &config) {
-  if (config.rf.device_name != "uhd" && config.rf.device_name != "zmq") {
+  if (config.rf.device_name != "uhd" && config.rf.device_name != "zmq" && config.rf.device_name != "file") {
     LOG_ERROR("invalid device name");
     return CONFIG_ERROR;
   }
@@ -69,7 +66,7 @@ int main(int argc, char *argv[]) {
 
   LOG_INFO("PRACH CONFIGURED");
 
-  LOG_INFO("Creating RF instance for: %s", conf.rf.device_name.c_str());
+  LOG_INFO("Creating RF instance for device: %s", conf.rf.device_name.c_str());
   std::unique_ptr<RFBase> rf_dev = create_rf_instance(conf);
   if (!rf_dev) {
     LOG_ERROR("Failed to create RF instance. Exiting.");
@@ -84,25 +81,50 @@ int main(int argc, char *argv[]) {
     srsran_prach_gen(&prach, i, conf.rf.freq_offset, preambles[i]);
   }
 
-  uint32_t current_seq_idx = 0;
+  LOG_INFO("Generated %zu preambles", preambles.size());
 
-  while (true) {
-
-    cf_t *tx_buffer = preambles[current_seq_idx];
-    std::vector<std::complex<float>> tx_vector(tx_buffer,
-                                               tx_buffer + preamble_len);
-
-    if (rf_dev->transmit(conf, tx_vector) != SUCCESS) {
-      LOG_ERROR("Error during transmission.");
-      return CONFIG_ERROR;
+  // Simple continuous RF reading using srsRAN RF API (supports both UHD and ZMQ)
+  LOG_INFO("Starting continuous RF reading with %s device using srsRAN RF API...", 
+           conf.rf.device_name.c_str());
+  
+  const uint32_t samples_per_read = 1920; // One LTE slot
+  size_t total_samples_processed = 0;
+  size_t iteration_count = 0;
+  
+  // Allocate buffer for samples
+  std::vector<std::complex<float>> data_buffer(samples_per_read);
+  
+  // Simple receive loop using srsRAN RF API - auto-starts RX stream on first call
+  int nrecv;
+  while ((nrecv = rf_dev->receive(data_buffer.data(), samples_per_read)) > 0) {
+    iteration_count++;
+    total_samples_processed += nrecv;
+    
+    // TODO: Process the received samples here
+    // - PRACH detection
+    // - Signal analysis  
+    // - MSG4 spoofing logic
+    
+    // Log progress periodically
+    if (iteration_count % 1000 == 0) {
+      LOG_INFO("Processed %zu samples in %zu iterations using %s", 
+               total_samples_processed, iteration_count, conf.rf.device_name.c_str());
     }
-
-    current_seq_idx = (current_seq_idx + 1) % conf.prach.num_ra_preambles;
-    if (conf.prach.time_delay > 0) {
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(conf.prach.time_delay));
+    
+    // Demo exit condition - remove this in actual implementation
+    if (iteration_count >= 10000) {
+      LOG_INFO("Demo: Processed enough iterations (%zu), stopping...", iteration_count);
+      break;
     }
   }
+  
+  // Check if we exited due to error
+  if (nrecv < 0) {
+    LOG_ERROR("Receive loop exited due to error: %d", nrecv);
+  }
+  
+  LOG_INFO("RF receive loop completed. Total: %zu samples in %zu iterations using %s", 
+           total_samples_processed, iteration_count, conf.rf.device_name.c_str());
 
   for (auto &preamble : preambles) {
     free(preamble);

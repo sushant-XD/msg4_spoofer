@@ -6,18 +6,24 @@ freq_offset = 0
 rx_gain = 40.0
 tx_gain = 40.0
 srate = 23.04e6
-
 frequency = 1842.5e6
 nof_prb = 106
 N_id = 1
 ssb_numerology = 0
 
-device_name = "uhd"
-device_args = "type=b200"
+# UHD Configuration (USRP Hardware)
+# device_name = "uhd"
+# device_args = "type=b200"
 
-# device_name = zmq
+# ZMQ Configuration (Network-based simulation)
+device_name = "zmq"
+device_args = "tx_port=tcp://*:2000,rx_port=tcp://localhost:2001,id=enb"
 
-# file_path = "/home/sushant/Wireless/msg4_spoofer/iq.fc32"
+# File-based Configuration (read from IQ files)
+# device_name = "file"
+# file_path = "/path/to/rx_file.cf32"
+
+[cell]
 
 [prach]
 config_idx = 1

@@ -38,7 +38,7 @@ typedef struct rf_config_s {
   uint32_t ssb_numerology;
 
   std::string device_name;
-  const char *device_args;
+  std::string device_args;
 
   std::string file_path;
 } rf_config_t;
