@@ -40,3 +40,7 @@ build/
 *.log
 # debug information files
 *.dwo
+
+# custom
+MSG2_README.md
+.vscode
