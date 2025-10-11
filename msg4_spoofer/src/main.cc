@@ -1,6 +1,7 @@
 #include "config.h"
 #include "data_source.h"
 #include "logging.h"
+#include "msg2_decoder.h"
 #include "rf_base.h"
 #include "srsran/srsran.h"
 #include <chrono>
@@ -8,10 +9,15 @@
 #include <srsran/phy/utils/vector.h>
 #include <string>
 #include <thread>
+
+// Forward declaration for MSG2 spoofer integration
+void run_msg2_spoofer_demo(const std::string &config_path);
+
 #define MAX_LEN 70176
 
 spoofer_error_e check_config_validity(spoofer_config_t &config) {
-  if (config.rf.device_name != "uhd" && config.rf.device_name != "zmq" && config.rf.device_name != "file") {
+  if (config.rf.device_name != "uhd" && config.rf.device_name != "zmq" &&
+      config.rf.device_name != "file") {
     LOG_ERROR("invalid device name");
     return CONFIG_ERROR;
   }
@@ -26,106 +32,78 @@ spoofer_error_e check_config_validity(spoofer_config_t &config) {
 
 int main(int argc, char *argv[]) {
   if (argc != 2) {
-    LOG_ERROR("Usage: msg4_spoofer <config file>\n");
+    LOG_ERROR("Usage: %s <config file>", argv[0]);
     return EXIT_FAILURE;
   }
 
   std::string config_path(argv[1]);
+
+  // Load and validate configuration
   spoofer_config_t conf = load(config_path);
-
-  if (check_config_validity(conf) != SUCCESS)
-    return CONFIG_ERROR;
-
-  srsran_prach_t prach;
-  srsran_prach_cfg_t prach_cfg;
-
-  int nof_prb = conf.rf.nof_prb;
-
-  prach_cfg.is_nr = conf.prach.is_nr;
-  prach_cfg.config_idx = conf.prach.config_idx;
-  prach_cfg.hs_flag = conf.prach.hs_flag;
-  prach_cfg.freq_offset = conf.prach.freq_offset;
-  prach_cfg.root_seq_idx = conf.prach.root_seq_idx;
-  prach_cfg.zero_corr_zone = conf.prach.zero_corr_zone;
-  prach_cfg.num_ra_preambles = conf.prach.num_ra_preambles;
-
-  uint32_t fft_size = srsran_symbol_sz(conf.rf.nof_prb);
-  if (fft_size == 0) {
-    LOG_ERROR("Invalid number of PRBs");
-    return INIT_ERROR;
-  }
-
-  if (srsran_prach_init(&prach, srsran_symbol_sz(nof_prb))) {
-    LOG_ERROR("Failed to initialize PRACH");
-    return INIT_ERROR;
-  }
-  if (srsran_prach_set_cfg(&prach, &prach_cfg, nof_prb)) {
-    LOG_ERROR("Error configuring PRACH\n");
-    return CONFIG_ERROR;
-  }
-
-  LOG_INFO("PRACH CONFIGURED");
-
-  LOG_INFO("Creating RF instance for device: %s", conf.rf.device_name.c_str());
-  std::unique_ptr<RFBase> rf_dev = create_rf_instance(conf);
-  if (!rf_dev) {
-    LOG_ERROR("Failed to create RF instance. Exiting.");
+  if (check_config_validity(conf) != SUCCESS) {
+    LOG_ERROR("Configuration validation failed");
     return EXIT_FAILURE;
   }
 
-  size_t preamble_len = prach.N_seq + prach.N_cp;
+  // Initialize logger
+  srslog::init();
+  srslog::basic_logger &logger = srslog::fetch_basic_logger("MSG2");
+  logger.set_level(srslog::basic_levels::info);
 
-  std::vector<cf_t *> preambles(conf.prach.num_ra_preambles);
-  for (int i = 0; i < preambles.size(); ++i) {
-    preambles[i] = srsran_vec_cf_malloc(preamble_len);
-    srsran_prach_gen(&prach, i, conf.rf.freq_offset, preambles[i]);
+  LOG_INFO(
+      "MSG2 Decoder - Sample Rate: %.2f MHz, Freq: %.2f MHz, PRBs: %u, PCI: %u",
+      conf.rf.srate / 1e6, conf.rf.frequency / 1e6, conf.rf.nof_prb,
+      conf.rf.N_id);
+
+  // Initialize MSG2 decoder
+  MSG2Decoder decoder(logger, conf.rf.srate, conf.rf.nof_prb, conf.rf.N_id,
+                      conf.rf.frequency);
+
+  PrachConfig prach_cfg;
+  prach_cfg.config_idx = conf.prach.config_idx;
+  prach_cfg.is_nr = conf.prach.is_nr;
+  prach_cfg.hs_flag = conf.prach.hs_flag;
+  prach_cfg.root_seq_idx = conf.prach.root_seq_idx;
+  prach_cfg.zero_corr_zone = conf.prach.zero_corr_zone;
+  prach_cfg.num_preambles = conf.prach.num_ra_preambles;
+  decoder.set_prach_config(prach_cfg);
+
+  if (!decoder.init()) {
+    LOG_ERROR("Failed to initialize MSG2 decoder");
+    return EXIT_FAILURE;
   }
 
-  LOG_INFO("Generated %zu preambles", preambles.size());
+  // Create RF instance
+  std::unique_ptr<RFBase> rf_dev = create_rf_instance(conf);
+  if (!rf_dev) {
+    LOG_ERROR("Failed to create RF instance");
+    return EXIT_FAILURE;
+  }
 
-  // Simple continuous RF reading using srsRAN RF API (supports both UHD and ZMQ)
-  LOG_INFO("Starting continuous RF reading with %s device using srsRAN RF API...", 
-           conf.rf.device_name.c_str());
-  
-  const uint32_t samples_per_read = 1920; // One LTE slot
-  size_t total_samples_processed = 0;
-  size_t iteration_count = 0;
-  
-  // Allocate buffer for samples
-  std::vector<std::complex<float>> data_buffer(samples_per_read);
-  
-  // Simple receive loop using srsRAN RF API - auto-starts RX stream on first call
-  while (rf_dev->receive(data_buffer.data(), samples_per_read)) {
-    iteration_count++;
-    total_samples_processed += samples_per_read;
-    
-    // TODO: Process the received samples here
-    // - PRACH detection
-    // - Signal analysis  
-    // - MSG4 spoofing logic
-    
-    // Log progress periodically
-    if (iteration_count % 1000 == 0) {
-      LOG_INFO("Processed %zu samples in %zu iterations using %s", 
-               total_samples_processed, iteration_count, conf.rf.device_name.c_str());
+  // Calculate samples per slot (1ms for 15kHz SCS)
+  uint32_t slot_len = static_cast<uint32_t>(conf.rf.srate * 0.001);
+  std::vector<cf_t> data_buffer(slot_len);
+
+  LOG_INFO("Starting MSG2 monitoring (Ctrl+C to stop)...");
+
+  uint32_t slot_idx = 0;
+  size_t total_msg2_found = 0;
+
+  // Main receive loop
+  while (rf_dev->receive(data_buffer.data(), slot_len)) {
+    std::vector<MSG2Result> results =
+        decoder.process_slot(data_buffer.data(), slot_idx);
+
+    for (const auto &msg2 : results) {
+      total_msg2_found++;
+      LOG_INFO("MSG2 [#%zu] SFN=%u Slot=%u RA-RNTI=0x%04x TC-RNTI=0x%04x "
+               "RAPID=%u TA=%u",
+               total_msg2_found, msg2.sfn, msg2.slot_in_frame, msg2.ra_rnti,
+               msg2.tc_rnti, msg2.rapid, msg2.timing_advance);
     }
-    
-    // Demo exit condition - remove this in actual implementation
-    if (iteration_count >= 10000) {
-      LOG_INFO("Demo: Processed enough iterations (%zu), stopping...", iteration_count);
-      break;
-    }
-  }
-  
-  // If we exited the loop, it means receive failed or we hit the demo limit
-  if (iteration_count < 10000) {
-    LOG_ERROR("Receive loop exited due to RF failure");
-  }
-  
-  LOG_INFO("RF receive loop completed. Total: %zu samples in %zu iterations using %s", 
-           total_samples_processed, iteration_count, conf.rf.device_name.c_str());
 
-  for (auto &preamble : preambles) {
-    free(preamble);
+    slot_idx = (slot_idx + 1) % 10240;
   }
+
+  return EXIT_SUCCESS;
 }

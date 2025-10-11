@@ -34,3 +34,11 @@ zero_correlation_zone = 0
 num_ra_preambles = 64
 time_delay = 1 # in millisecond
 
+# MSG2 Configuration for 5G RACH Security Research
+[msg2]
+max_rnti_candidates = 200
+search_space_id = 1
+coreset_id = 0
+enable_multiple_rnti = true
+msg2_window_ms = 4
+

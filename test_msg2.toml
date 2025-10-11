@@ -1,0 +1,39 @@
+# Simple MSG2 Decoder Test Configuration
+# For testing phase - simplified and focused on RA-RNTI decoding
+
+[log]
+level = "debug"
+
+[rf]
+freq_offset = 0
+rx_gain = 40.0
+tx_gain = 40.0
+srate = 23.04e6
+frequency = 1842.5e6
+nof_prb = 106
+N_id = 1
+ssb_numerology = 0  # 15kHz SCS for testing
+
+# Test with ZMQ for controlled environment
+device_name = "zmq"
+device_args = "tx_port=tcp://*:2000,rx_port=tcp://localhost:2001,id=enb"
+
+# Alternative: File-based testing
+# device_name = "file"  
+# file_path = "/path/to/test_signal.cf32"
+
+[prach]
+config_idx = 1
+is_nr = true
+hs_flag = false
+root_sequence_index = 1
+zero_correlation_zone = 0
+num_ra_preambles = 64
+time_delay = 1
+
+# Testing configuration - simplified for testing phase
+[msg2_test]
+max_candidates = 100
+test_mode = true
+comprehensive_sweep = false
+focus_recent_slots = true
