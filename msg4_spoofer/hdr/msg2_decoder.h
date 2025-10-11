@@ -2,10 +2,9 @@
 #ifndef MSG2_DECODER_H
 #define MSG2_DECODER_H
 
-#include "srsran/phy/ue/ue_dl_nr.h"
-#include "srsran/phy/common/phy_common_nr.h"
+#include "srsran/srsran.h"
 #include "srsran/common/phy_cfg_nr.h"
-#include "srsran/srslog/srslog.h"
+// #include "srslog/srslog.h"
 #include <vector>
 #include <cstdint>
 
@@ -34,7 +33,6 @@ struct PrachConfig {
 
 class MSG2Decoder {
 private:
-    srslog::basic_logger& logger;
     
     // PHY configuration
     srsran::phy_cfg_nr_t phy_cfg;
@@ -63,7 +61,7 @@ private:
     PrachConfig prach_cfg;
 
 public:
-    MSG2Decoder(srslog::basic_logger& logger_, 
+    MSG2Decoder(
                 uint32_t sample_rate_, 
                 uint32_t nof_prb_, 
                 uint32_t pci_,

@@ -19,15 +19,16 @@ target_include_directories(msg4_spoofer PRIVATE
 
 target_link_libraries(msg4_spoofer PRIVATE
 
-    -Wl,--start-group
     srsran_phy
-    srsran_phch
     srsran_common
     support
     srslog
     srsran_rf
-    -Wl,--end-group
 
+    Threads::Threads
+    ${FFT_LIBRARIES}
+    ${SEC_LIBRARIES}
+    m
     pthread
 
 )

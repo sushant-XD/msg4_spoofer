@@ -45,10 +45,6 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // Initialize logger
-  srslog::init();
-  srslog::basic_logger &logger = srslog::fetch_basic_logger("MSG2");
-  logger.set_level(srslog::basic_levels::info);
 
   LOG_INFO(
       "MSG2 Decoder - Sample Rate: %.2f MHz, Freq: %.2f MHz, PRBs: %u, PCI: %u",
@@ -56,7 +52,7 @@ int main(int argc, char *argv[]) {
       conf.rf.N_id);
 
   // Initialize MSG2 decoder
-  MSG2Decoder decoder(logger, conf.rf.srate, conf.rf.nof_prb, conf.rf.N_id,
+  MSG2Decoder decoder(conf.rf.srate, conf.rf.nof_prb, conf.rf.N_id,
                       conf.rf.frequency);
 
   PrachConfig prach_cfg;
@@ -90,7 +86,7 @@ int main(int argc, char *argv[]) {
   size_t total_msg2_found = 0;
 
   // Main receive loop
-  while (rf_dev->receive(data_buffer.data(), slot_len)) {
+  while (rf_dev->receive(reinterpret_cast<std::complex<float>*>(data_buffer.data()), slot_len)) {
     std::vector<MSG2Result> results =
         decoder.process_slot(data_buffer.data(), slot_idx);
 

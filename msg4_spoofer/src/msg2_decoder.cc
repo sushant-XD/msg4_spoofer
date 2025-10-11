@@ -1,21 +1,23 @@
 // msg2_decoder.cpp
 #include "msg2_decoder.h"
 #include "srsran/mac/mac_sch_pdu_nr.h"
-#include "srsran/phy/phch/ra_nr.h"
 #include <cstring>
 
-MSG2Decoder::MSG2Decoder(srslog::basic_logger& logger_, 
+MSG2Decoder::MSG2Decoder( 
                          uint32_t sample_rate_, 
                          uint32_t nof_prb_, 
                          uint32_t pci_,
                          double carrier_freq_) :
-    logger(logger_),
     sample_rate(sample_rate_),
     nof_prb(nof_prb_),
     pci(pci_),
     carrier_freq(carrier_freq_),
     buffer(nullptr)
 {
+    // Initialize structures to zero
+    memset(&ue_dl, 0, sizeof(ue_dl));
+    memset(&softbuffer_rx, 0, sizeof(softbuffer_rx));
+    
     // Calculate timing parameters
     sf_len = sample_rate * 0.001; // 1ms subframe
     slot_per_sf = 1; // For SCS 15kHz (numerology 0)
@@ -35,7 +37,7 @@ bool MSG2Decoder::init() {
     // Allocate buffer
     buffer = srsran_vec_cf_malloc(sf_len);
     if (!buffer) {
-        logger.error("Failed to allocate buffer");
+        // /logger.error("Failed to allocate buffer");
         return false;
     }
     
@@ -47,9 +49,9 @@ bool MSG2Decoder::init() {
     ue_dl_args.nof_rx_antennas = 1;
     ue_dl_args.nof_max_prb = nof_prb;
     
-    cf_t* buffer_ptrs[SRSRAN_MAX_PORTS] = {buffer};
-    if (srsran_ue_dl_nr_init(&ue_dl, buffer_ptrs, &ue_dl_args) < SRSRAN_SUCCESS) {
-        logger.error("Failed to initialize ue_dl_nr");
+    cf_t* input_ptrs[SRSRAN_MAX_PORTS] = {buffer, nullptr, nullptr, nullptr};
+    if (srsran_ue_dl_nr_init(&ue_dl, input_ptrs, &ue_dl_args) < SRSRAN_SUCCESS) {
+        // logger.error("Failed to initialize ue_dl_nr");
         return false;
     }
     
@@ -62,7 +64,7 @@ bool MSG2Decoder::init() {
     carrier.dl_center_frequency_hz = carrier_freq;
     
     if (srsran_ue_dl_nr_set_carrier(&ue_dl, &carrier) < SRSRAN_SUCCESS) {
-        logger.error("Failed to set carrier");
+        // logger.error("Failed to set carrier");
         return false;
     }
     
@@ -70,14 +72,14 @@ bool MSG2Decoder::init() {
     if (srsran_softbuffer_rx_init_guru(&softbuffer_rx, 
                                       SRSRAN_SCH_NR_MAX_NOF_CB_LDPC, 
                                       SRSRAN_LDPC_MAX_LEN_ENCODED_CB) != SRSRAN_SUCCESS) {
-        logger.error("Failed to initialize softbuffer");
+        // logger.error("Failed to initialize softbuffer");
         return false;
     }
     
     // Calculate RA-RNTI list based on PRACH configuration
     calculate_ra_rnti_list();
     
-    logger.info("MSG2 Decoder initialized with %d RA-RNTIs to monitor", ra_rnti_list.size());
+    // logger.info("MSG2 Decoder initialized with %d RA-RNTIs to monitor", ra_rnti_list.size());
     return true;
 }
 
@@ -100,8 +102,8 @@ std::vector<MSG2Result> MSG2Decoder::process_slot(cf_t* iq_samples, uint32_t slo
     uint32_t sfn = (slot_idx / slot_per_frame) % 1024;
     uint32_t slot_in_frame = slot_idx % slot_per_frame;
     
-    logger.debug("Processing SFN=%d, Slot=%d (absolute slot %d)", 
-                sfn, slot_in_frame, slot_idx);
+    // logger.debug("Processing SFN=%d, Slot=%d (absolute slot %d)", 
+    //             sfn, slot_in_frame, slot_idx);
     
     // Try to decode with each RA-RNTI
     for (uint16_t ra_rnti : ra_rnti_list) {
@@ -109,8 +111,8 @@ std::vector<MSG2Result> MSG2Decoder::process_slot(cf_t* iq_samples, uint32_t slo
         if (result.valid) {
             result.sfn = sfn;
             result.slot_in_frame = slot_in_frame;
-            logger.info("MSG2 decoded! SFN=%d, Slot=%d, RA-RNTI: 0x%04x, TC-RNTI: 0x%04x, RAPID: %d", 
-                       sfn, slot_in_frame, result.ra_rnti, result.tc_rnti, result.rapid);
+            // logger.info("MSG2 decoded! SFN=%d, Slot=%d, RA-RNTI: 0x%04x, TC-RNTI: 0x%04x, RAPID: %d", 
+            //            sfn, slot_in_frame, result.ra_rnti, result.tc_rnti, result.rapid);
             results.push_back(result);
         }
     }
@@ -125,7 +127,7 @@ std::vector<MSG2Result> MSG2Decoder::process_slot_with_prach_slot(cf_t* iq_sampl
     
     // Validate PRACH slot
     if (prach_slot_in_frame % 2 != 0) {
-        logger.warning("Invalid PRACH slot %d (must be even: 0,2,4,6,8)", prach_slot_in_frame);
+        // logger.warning("Invalid PRACH slot %d (must be even: 0,2,4,6,8)", prach_slot_in_frame);
         return results;
     }
     
@@ -141,16 +143,16 @@ std::vector<MSG2Result> MSG2Decoder::process_slot_with_prach_slot(cf_t* iq_sampl
     uint32_t sfn = (slot_idx / slot_per_frame) % 1024;
     uint32_t slot_in_frame = slot_idx % slot_per_frame;
     
-    logger.debug("Processing SFN=%d, Slot=%d with specific RA-RNTI=0x%04x (PRACH slot %d)", 
-                sfn, slot_in_frame, ra_rnti, prach_slot_in_frame);
+    // logger.debug("Processing SFN=%d, Slot=%d with specific RA-RNTI=0x%04x (PRACH slot %d)", 
+    //             sfn, slot_in_frame, ra_rnti, prach_slot_in_frame);
     
     // Only try to decode with the specific RA-RNTI
     MSG2Result result = try_decode_msg2(slot_cfg, ra_rnti);
     if (result.valid) {
         result.sfn = sfn;
         result.slot_in_frame = slot_in_frame;
-        logger.info("MSG2 decoded! SFN=%d, Slot=%d, RA-RNTI: 0x%04x, TC-RNTI: 0x%04x, RAPID: %d", 
-                   sfn, slot_in_frame, result.ra_rnti, result.tc_rnti, result.rapid);
+        // logger.info("MSG2 decoded! SFN=%d, Slot=%d, RA-RNTI: 0x%04x, TC-RNTI: 0x%04x, RAPID: %d", 
+        //            sfn, slot_in_frame, result.ra_rnti, result.tc_rnti, result.rapid);
         results.push_back(result);
     }
     
@@ -223,13 +225,13 @@ void MSG2Decoder::calculate_ra_rnti_list() {
         // RA-RNTI formula with f_id=0, ul_carrier_id=0
         uint16_t ra_rnti = 1 + s_id + 14 * t_id;
         ra_rnti_list.push_back(ra_rnti);
-        logger.debug("PRACH slot %d -> RA-RNTI: %d (0x%04x)", t_id, ra_rnti, ra_rnti);
+        // logger.debug("PRACH slot %d -> RA-RNTI: %d (0x%04x)", t_id, ra_rnti, ra_rnti);
     }
     
-    logger.info("Generated %d RA-RNTI values for config_idx=%d: %s", 
-               ra_rnti_list.size(), 
-               prach_cfg.config_idx,
-               "1, 29, 57, 85, 113");
+    // logger.info("Generated %d RA-RNTI values for config_idx=%d: %s", 
+    //            ra_rnti_list.size(), 
+    //            prach_cfg.config_idx,
+    //            "1, 29, 57, 85, 113");
 }
 
 MSG2Result MSG2Decoder::try_decode_msg2(srsran_slot_cfg_t& slot_cfg, uint16_t ra_rnti) {
@@ -345,8 +347,8 @@ bool MSG2Decoder::parse_rar_pdu(uint8_t* data, uint32_t len, MSG2Result& result)
         // Extract TC-RNTI (16 bits) - THIS IS WHAT WE NEED!
         result.tc_rnti = (rar[5] << 8) | rar[6];
         
-        logger.debug("Parsed RAR: RAPID=%d, TA=%d, TC-RNTI=0x%04x", 
-                    result.rapid, result.timing_advance, result.tc_rnti);
+        // logger.debug("Parsed RAR: RAPID=%d, TA=%d, TC-RNTI=0x%04x", 
+        //             result.rapid, result.timing_advance, result.tc_rnti);
         
         return true;
     }
