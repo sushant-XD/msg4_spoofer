@@ -1,22 +1,21 @@
 #pragma once
 
 #include "rf_base.h"
-#include "config.h"
-#include <srsran/phy/rf/rf.h>
-#include <memory>
 #include <string>
+#include <cstdio>
 
-class RF : public RFBase {
+class RFFile : public RFBase {
 public:
-    RF(const spoofer_config_t& config);
-    ~RF();
+    RFFile(const std::string& rx_file, const std::string& tx_file);
+    ~RFFile();
 
     bool receive(std::complex<float>* buffer, uint32_t nsamples) override;
     bool transmit(const std::complex<float>* buffer, uint32_t nsamples,
                  bool start_of_burst = false, bool end_of_burst = false) override;
 
 private:
-    srsran_rf_t rf_device;
-    void configure_device(const spoofer_config_t& config);
-    std::string device_args;
+    FILE* rx_file_handle;
+    FILE* tx_file_handle;
+    std::string rx_filename;
+    std::string tx_filename;
 };

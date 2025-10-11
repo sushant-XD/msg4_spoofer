@@ -1,5 +1,6 @@
 #include "rf_base.h"
 #include "rf.h"
+#include "rf_file.h"
 #include "logging.h"
 
 std::unique_ptr<RFBase> create_rf_instance(const spoofer_config_t& config) {

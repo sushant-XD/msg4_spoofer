@@ -95,10 +95,9 @@ int main(int argc, char *argv[]) {
   std::vector<std::complex<float>> data_buffer(samples_per_read);
   
   // Simple receive loop using srsRAN RF API - auto-starts RX stream on first call
-  int nrecv;
-  while ((nrecv = rf_dev->receive(data_buffer.data(), samples_per_read)) > 0) {
+  while (rf_dev->receive(data_buffer.data(), samples_per_read)) {
     iteration_count++;
-    total_samples_processed += nrecv;
+    total_samples_processed += samples_per_read;
     
     // TODO: Process the received samples here
     // - PRACH detection
@@ -118,9 +117,9 @@ int main(int argc, char *argv[]) {
     }
   }
   
-  // Check if we exited due to error
-  if (nrecv < 0) {
-    LOG_ERROR("Receive loop exited due to error: %d", nrecv);
+  // If we exited the loop, it means receive failed or we hit the demo limit
+  if (iteration_count < 10000) {
+    LOG_ERROR("Receive loop exited due to RF failure");
   }
   
   LOG_INFO("RF receive loop completed. Total: %zu samples in %zu iterations using %s", 

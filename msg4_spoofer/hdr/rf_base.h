@@ -9,10 +9,10 @@ class RFBase {
 public:
   virtual ~RFBase() = default;
   
-  // Simple receive/transmit methods only
-  virtual int receive(std::complex<float>* buffer, uint32_t nsamples) = 0;
-  virtual int transmit(const std::complex<float>* buffer, uint32_t nsamples,
-                      bool start_of_burst = false, bool end_of_burst = false) = 0;
+  // Simple receive/transmit methods - return true on success, false on failure
+  virtual bool receive(std::complex<float>* buffer, uint32_t nsamples) = 0;
+  virtual bool transmit(const std::complex<float>* buffer, uint32_t nsamples,
+                       bool start_of_burst = false, bool end_of_burst = false) = 0;
 };
 
 // Factory function declaration

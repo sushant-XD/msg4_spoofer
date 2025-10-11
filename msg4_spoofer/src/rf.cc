@@ -2,7 +2,6 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstring>
-#include <algorithm>
 
 // Single RF class that handles both UHD and ZMQ
 RF::RF(const spoofer_config_t& config) {
@@ -59,78 +58,13 @@ void RF::configure_device(const spoofer_config_t& config) {
     }
 }
 
-int RF::receive(std::complex<float>* buffer, uint32_t nsamples) {
-    void* buffers[1] = {buffer};
-    int samples_received = srsran_rf_recv_with_time(&rf_device, buffers, nsamples, true, nullptr, nullptr);
-    return samples_received;
+bool RF::receive(std::complex<float>* buffer, uint32_t nsamples) {
+    int samples_received = srsran_rf_recv(&rf_device, buffer, nsamples, true);
+    return samples_received > 0;
 }
 
-int RF::transmit(const std::complex<float>* buffer, uint32_t nsamples, 
-                bool start_of_burst, bool end_of_burst) {
-    void* buffers[1] = {const_cast<std::complex<float>*>(buffer)};
-    int samples_sent = srsran_rf_send_timed(&rf_device, buffers, nsamples, 0, 0.0);
-    return samples_sent;
-}
-
-// File-based RF class for testing/simulation
-RFFile::RFFile(const std::string& rx_file, const std::string& tx_file) 
-    : rx_filename(rx_file), tx_filename(tx_file), rx_file_handle(nullptr), tx_file_handle(nullptr) {
-    
-    if (!rx_filename.empty()) {
-        rx_file_handle = fopen(rx_filename.c_str(), "rb");
-        if (!rx_file_handle) {
-            throw std::runtime_error("Failed to open RX file: " + rx_filename);
-        }
-    }
-    
-    if (!tx_filename.empty()) {
-        tx_file_handle = fopen(tx_filename.c_str(), "wb");
-        if (!tx_file_handle) {
-            throw std::runtime_error("Failed to open TX file: " + tx_filename);
-        }
-    }
-    
-    std::cout << "File-based RF initialized (RX: " << rx_filename 
-              << ", TX: " << tx_filename << ")" << std::endl;
-}
-
-RFFile::~RFFile() {
-    if (rx_file_handle) {
-        fclose(rx_file_handle);
-    }
-    if (tx_file_handle) {
-        fclose(tx_file_handle);
-    }
-}
-
-int RFFile::receive(std::complex<float>* buffer, uint32_t nsamples) {
-    if (!rx_file_handle) {
-        // If no file, generate zeros using proper initialization
-        std::fill(buffer, buffer + nsamples, std::complex<float>(0.0f, 0.0f));
-        return nsamples;
-    }
-    
-    size_t samples_read = fread(buffer, sizeof(std::complex<float>), nsamples, rx_file_handle);
-    
-    // If reached end of file, loop back to beginning
-    if (samples_read < nsamples) {
-        fseek(rx_file_handle, 0, SEEK_SET);
-        size_t remaining = nsamples - samples_read;
-        size_t additional = fread(buffer + samples_read, sizeof(std::complex<float>), 
-                                remaining, rx_file_handle);
-        samples_read += additional;
-    }
-    
-    return samples_read;
-}
-
-int RFFile::transmit(const std::complex<float>* buffer, uint32_t nsamples,
-                    bool start_of_burst, bool end_of_burst) {
-    if (!tx_file_handle) {
-        return nsamples; // Pretend we transmitted
-    }
-    
-    size_t samples_written = fwrite(buffer, sizeof(std::complex<float>), nsamples, tx_file_handle);
-    fflush(tx_file_handle);
-    return samples_written;
+bool RF::transmit(const std::complex<float>* buffer, uint32_t nsamples, 
+                 bool start_of_burst, bool end_of_burst) {
+    int samples_sent = srsran_rf_send(&rf_device, const_cast<std::complex<float>*>(buffer), nsamples, true);
+    return samples_sent > 0;
 }
