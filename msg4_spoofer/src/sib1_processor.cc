@@ -271,7 +271,7 @@ bool SIB1Processor::configure_search_space_0(srsran_search_space_t &ss0_ref) {
   ss0_ref.nof_candidates[1] = 4; // AL2: 4 candidates
   ss0_ref.nof_candidates[2] = 4; // AL4: 4 candidates
   ss0_ref.nof_candidates[3] = 2; // AL8: 2 candidates
-  ss0_ref.nof_candidates[4] = 1; // AL16: 1 candidate
+  ss0_ref.nof_candidates[4] = 0; // AL16: 1 candidate
 
   ss0_ref.duration = 1;
   ss0_ref.nof_formats = 1;

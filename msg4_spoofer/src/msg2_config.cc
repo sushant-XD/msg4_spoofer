@@ -108,8 +108,8 @@ MSG2ConfigBuilder::from_toml_only(const spoofer_config_t &toml_config) {
   config.pdcch_config.configured = true;
   config.pdcch_config.coreset0_idx = 12; // Common default
   config.pdcch_config.searchspace0_idx = 0;
-  config.pdcch_config.nof_candidates_al4 = 4;
-  config.pdcch_config.nof_candidates_al8 = 2;
+  config.pdcch_config.nof_candidates_al4 = 2;
+  config.pdcch_config.nof_candidates_al8 = 0;
 
   // PRACH configuration from TOML
   config.prach_config.config_idx = toml_config.prach.config_idx;

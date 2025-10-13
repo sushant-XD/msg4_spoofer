@@ -45,6 +45,6 @@ max_rnti_candidates = 200
 search_space_id = 1
 coreset_id = 0
 enable_multiple_rnti = true
-msg2_window_ms = 4
+msg2_window_ms = 10
 
 

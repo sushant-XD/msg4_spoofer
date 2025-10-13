@@ -240,7 +240,7 @@ int main(int argc, char *argv[]) {
 
   // Search for and decode SIB1
   SIB1SearchResult sib1_result = sib1_processor.search_and_decode(
-      rf_dev.get(), ue_dl, phy_cfg, ssb_result, 10);
+      rf_dev.get(), ue_dl, phy_cfg, ssb_result, 1);
 
   // Create MSG2 configuration based on SIB1 availability
   MSG2Config msg2_config;
@@ -251,8 +251,8 @@ int main(int argc, char *argv[]) {
     msg2_config =
         MSG2ConfigBuilder::from_sib1(sib1_result.sib1_data, ssb_result, conf);
   } else {
-    LOG_WARN("SIB1 not found - using MIB+defaults for MSG2 config");
-    msg2_config = MSG2ConfigBuilder::from_mib_defaults(ssb_result, conf);
+    LOG_WARN("SIB1 not found - using default config provided for MSG2 config");
+    msg2_config = MSG2ConfigBuilder::from_toml_only(conf);
   }
 
   // Validate and print MSG2 configuration
