@@ -32,10 +32,10 @@ typedef struct rf_config_s {
   float tx_gain;
   double srate;
 
-  double frequency;
+  double dl_frequency;
+  double ul_frequency;
   uint32_t nof_prb;
   uint32_t N_id;
-  uint32_t ssb_numerology;
 
   std::string device_name;
   std::string device_args;
@@ -44,9 +44,10 @@ typedef struct rf_config_s {
 } rf_config_t;
 
 typedef struct ssb_config_s {
-  srsran_ssb_pattern_t ssb_pattern = SRSRAN_SSB_PATTERN_A;
-  srsran_subcarrier_spacing_t ssb_scs = srsran_subcarrier_spacing_15kHz;
+  srsran_ssb_pattern_t pattern = SRSRAN_SSB_PATTERN_A;
+  srsran_subcarrier_spacing_t scs = srsran_subcarrier_spacing_15kHz;
   srsran_duplex_mode_t duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
+  double scan_duration;
 } ssb_config_t;
 
 /* struct available in prach.h*/
@@ -80,19 +81,20 @@ static spoofer_config_t load(std::string config_path) {
   conf.rf.tx_gain = toml["rf"]["tx_gain"].value_or(0.0);
   conf.rf.srate = toml["rf"]["srate"].value_or(23.04e6);
 
-  conf.rf.frequency = toml["rf"]["frequency"].value_or(1842.5e6);
+  conf.rf.dl_frequency = toml["rf"]["downlink_frequency"].value_or(1842.5e6);
+  conf.rf.ul_frequency = toml["rf"]["uplink_frequency"].value_or(1842.5e6);
   conf.rf.nof_prb = toml["rf"]["nof_prb"].value_or(106);
   conf.rf.N_id = toml["rf"]["N_id"].value_or(1);
-  conf.rf.ssb_numerology = toml["rf"]["ssb_numerology"].value_or(0);
 
   conf.rf.device_name = toml["rf"]["device_name"].value_or("uhd");
   conf.rf.device_args = toml["rf"]["device_args"].value_or("type=b200");
   conf.rf.file_path = toml["rf"]["file_path"].value_or("");
 
   // Preconfigured right now
-  conf.ssb.ssb_pattern = SRSRAN_SSB_PATTERN_A;
-  conf.ssb.ssb_scs = srsran_subcarrier_spacing_15kHz;
+  conf.ssb.pattern = SRSRAN_SSB_PATTERN_A;
+  conf.ssb.scs = srsran_subcarrier_spacing_15kHz;
   conf.ssb.duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
+  conf.ssb.scan_duration = toml["ssb"]["scan_duration"].value_or(1000);
 
   conf.prach.config_idx =
       toml["prach"]["config_idx"].value_or(PRACH_CONFIG_IDX_DEFAULT);

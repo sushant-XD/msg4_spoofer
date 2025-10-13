@@ -7,7 +7,7 @@ file(GLOB_RECURSE SPOOFER_SOURCES CONFIGURE_DEPENDS "${SPOOFER_SRC_DIR}/*.cc")
 add_executable(msg4_spoofer ${SPOOFER_SOURCES})
 
 set_target_properties(msg4_spoofer PROPERTIES
-    CXX_STANDARD 20
+    CXX_STANDARD 17
     CXX_STANDARD_REQUIRED YES
     CXX_EXTENSIONS NO
     LINKER_LANGUAGE CXX
@@ -18,12 +18,14 @@ target_include_directories(msg4_spoofer PRIVATE
 )
 
 target_link_libraries(msg4_spoofer PRIVATE
-
+    srsran_ue
     srsran_phy
     srsran_common
     support
     srslog
     srsran_rf
+    rrc_nr_asn1
+    srsran_asn1
 
     Threads::Threads
     ${FFT_LIBRARIES}

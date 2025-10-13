@@ -9,21 +9,27 @@ srate = 23.04e6
 frequency = 1842.5e6
 nof_prb = 106
 N_id = 1
-ssb_numerology = 0
 
 # UHD Configuration (USRP Hardware)
 # device_name = "uhd"
 # device_args = "type=b200"
 
 # ZMQ Configuration (Network-based simulation)
-device_name = "zmq"
-device_args = "tx_port=tcp://*:2000,rx_port=tcp://localhost:2001,id=enb"
+# device_name = "zmq"
+# device_args = "tx_port=tcp://*:2000,rx_port=tcp://localhost:2001,id=enb"
 
 # File-based Configuration (read from IQ files)
-# device_name = "file"
-# file_path = "/path/to/rx_file.cf32"
+device_name = "file"
+file_path = "/home/sushant/Wireless/msg4_spoofer/pdcch_1842MHz.fc32"
 
 [cell]
+
+[ssb]
+numerology = 0 # not used right now
+pattern = "A" # not used right now
+scs = 15 # not used right now
+scan_duration = 1000 # in ms
+
 
 [prach]
 config_idx = 1
@@ -34,11 +40,11 @@ zero_correlation_zone = 0
 num_ra_preambles = 64
 time_delay = 1 # in millisecond
 
-# MSG2 Configuration for 5G RACH Security Research
 [msg2]
 max_rnti_candidates = 200
 search_space_id = 1
 coreset_id = 0
 enable_multiple_rnti = true
 msg2_window_ms = 4
+
 
