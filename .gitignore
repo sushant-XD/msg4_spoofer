@@ -44,3 +44,5 @@ build/
 # custom
 MSG2_README.md
 .vscode
+*.fc32
+*.bin
