@@ -231,10 +231,6 @@ int main(int argc, char *argv[]) {
 
   srsran_dci_cfg_nr_t dci_cfg = phy_cfg.get_dci_cfg();
 
-  dci_cfg.monitor_common_0_0 =
-      true; // Monitor Common SearchSpace with DCI format 0_0
-  dci_cfg.monitor_0_0_and_1_0 = true; // Monitor both DCI formats 0_0 and 1_0
-
   if (srsran_ue_dl_nr_set_pdcch_config(&ue_dl, &phy_cfg.pdcch, &dci_cfg) !=
       SRSRAN_SUCCESS) {
     return false;
@@ -244,7 +240,7 @@ int main(int argc, char *argv[]) {
 
   // Search for and decode SIB1
   SIB1SearchResult sib1_result = sib1_processor.search_and_decode(
-      rf_dev.get(), ue_dl, phy_cfg, ssb_result, 1600);
+      rf_dev.get(), ue_dl, phy_cfg, ssb_result, 10);
 
   // Create MSG2 configuration based on SIB1 availability
   MSG2Config msg2_config;

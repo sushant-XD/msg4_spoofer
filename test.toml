@@ -20,7 +20,7 @@ N_id = 1
 
 # File-based Configuration (read from IQ files)
 device_name = "file"
-file_path = "/home/sushant/Wireless/msg4_spoofer/pdcch_1842MHz.fc32"
+file_path = "/home/ntia/msg4_spoofer/uhd_iq_data.fc32"
 
 [cell]
 
