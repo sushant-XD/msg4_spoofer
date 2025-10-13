@@ -124,8 +124,6 @@ int main(int argc, char *argv[]) {
   ue_dl_args.pdsch.sch.decoder_use_flooded = false;
   ue_dl_args.pdsch.sch.decoder_scaling_factor = 0;
   ue_dl_args.pdsch.sch.max_nof_iter = 10;
-  // ue_dl_args.scs = phy_cfg.carrier.scs;
-  // ue_dl_args.sample_rate_hz = phy_cfg.carrier.sample_rate_hz;
 
   cf_t *input_ptrs[SRSRAN_MAX_PORTS] = {ue_buffer, nullptr, nullptr, nullptr};
   if (srsran_ue_dl_nr_init(&ue_dl, input_ptrs, &ue_dl_args) < SRSRAN_SUCCESS) {
