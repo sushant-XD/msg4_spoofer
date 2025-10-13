@@ -1,6 +1,7 @@
 #include "config.h"
 #include "data_source.h"
 #include "logging.h"
+#include "msg2_config.h"
 #include "msg2_decoder.h"
 #include "rf_base.h"
 #include "sib1_decoder.h"
@@ -172,20 +173,8 @@ int main(int argc, char *argv[]) {
   phy_cfg.pdcch.coreset_present[0] = true;
 
   /* Create SearchSpace0 */
-  // srsran::make_phy_search_space0_cfg(&phy_cfg.pdcch.search_space[0]);
-  // Use manual SearchSpace0 configuration instead
-  srsran_search_space_t &ss0 = phy_cfg.pdcch.search_space[0];
-  ss0.id = 0;
-  ss0.coreset_id = 0;
-  ss0.type = srsran_search_space_type_common_0;
-  ss0.nof_candidates[0] = 0; // AL1
-  ss0.nof_candidates[1] = 0; // AL2
-  ss0.nof_candidates[2] = 4; // AL4
-  ss0.nof_candidates[3] = 2; // AL8
-  ss0.nof_candidates[4] = 0; // AL16
-  ss0.duration = 1;
-  ss0.nof_formats = 1;
-  ss0.formats[0] = srsran_dci_format_nr_1_0;
+  // SearchSpace0 will be configured by SIB1Processor to ensure proper reference
+  // handling
   phy_cfg.pdcch.search_space_present[0] = true;
 
   /**************** Initialization of UE DL buffer ************************/
@@ -224,7 +213,28 @@ int main(int argc, char *argv[]) {
   if (srsran_ue_dl_nr_set_carrier(&ue_dl, &phy_cfg.carrier) != SRSRAN_SUCCESS) {
     return false;
   }
+
+  // Initialize SIB1 processor early to configure SearchSpace0
+  LOG_INFO("Initializing SIB1 processor...");
+  SIB1Processor sib1_processor(conf.rf.srate, conf.rf.nof_prb, conf.rf.N_id,
+                               conf.rf.dl_frequency);
+
+  if (!sib1_processor.init()) {
+    LOG_ERROR("Failed to initialize SIB1 processor");
+    return EXIT_FAILURE;
+  }
+
+  if (!sib1_processor.configure_search_space_0(phy_cfg.pdcch.search_space[0])) {
+    LOG_ERROR("Failed to configure SearchSpace0 for SIB1");
+    return EXIT_FAILURE;
+  }
+
   srsran_dci_cfg_nr_t dci_cfg = phy_cfg.get_dci_cfg();
+
+  dci_cfg.monitor_common_0_0 =
+      true; // Monitor Common SearchSpace with DCI format 0_0
+  dci_cfg.monitor_0_0_and_1_0 = true; // Monitor both DCI formats 0_0 and 1_0
+
   if (srsran_ue_dl_nr_set_pdcch_config(&ue_dl, &phy_cfg.pdcch, &dci_cfg) !=
       SRSRAN_SUCCESS) {
     return false;
@@ -232,44 +242,55 @@ int main(int argc, char *argv[]) {
 
   LOG_INFO("UE DL instance created successfully");
 
-  // Initialize and use SIB1 processor
-  LOG_INFO("Initializing SIB1 processor...");
-  SIB1Processor sib1_processor(conf.rf.srate, conf.rf.nof_prb, conf.rf.N_id, conf.rf.dl_frequency);
-  
-  if (!sib1_processor.init()) {
-    LOG_ERROR("Failed to initialize SIB1 processor");
-    return EXIT_FAILURE;
-  }
-
   // Search for and decode SIB1
   SIB1SearchResult sib1_result = sib1_processor.search_and_decode(
       rf_dev.get(), ue_dl, phy_cfg, ssb_result, 1600);
 
-  if (!sib1_result.found) {
-    LOG_ERROR("Failed to find and decode SIB1");
+  // Create MSG2 configuration based on SIB1 availability
+  MSG2Config msg2_config;
+  if (sib1_result.found) {
+    LOG_INFO(
+        "SIB1 successfully decoded in slot %u - using SIB1 for MSG2 config",
+        sib1_result.slot_found);
+    msg2_config =
+        MSG2ConfigBuilder::from_sib1(sib1_result.sib1_data, ssb_result, conf);
+  } else {
+    LOG_WARN("SIB1 not found - using MIB+defaults for MSG2 config");
+    msg2_config = MSG2ConfigBuilder::from_mib_defaults(ssb_result, conf);
+  }
+
+  // Validate and print MSG2 configuration
+  if (!msg2_config_utils::validate_config(msg2_config)) {
+    LOG_ERROR("MSG2 configuration validation failed");
     return EXIT_FAILURE;
   }
 
-  LOG_INFO("SIB1 successfully decoded in slot %u", sib1_result.slot_found);
+  msg2_config_utils::print_config(msg2_config);
+
+  // Update PHY configuration for MSG2 decoding
+  if (!MSG2ConfigBuilder::configure_phy_for_msg2(phy_cfg, msg2_config,
+                                                 ssb_result)) {
+    LOG_ERROR("Failed to configure PHY for MSG2 decoding");
+    return EXIT_FAILURE;
+  }
 
   LOG_INFO(
       "MSG2 Decoder - Sample Rate: %.2f MHz, Freq: %.2f MHz, PRBs: %u, PCI: %u",
       conf.rf.srate / 1e6, conf.rf.dl_frequency / 1e6, conf.rf.nof_prb,
       conf.rf.N_id);
 
-  // Initialize MSG2 decoder with shared UE DL
+  // Initialize MSG2 decoder with shared UE DL and MSG2 config
   MSG2Decoder decoder(conf.rf.srate, conf.rf.nof_prb, conf.rf.N_id,
                       conf.rf.dl_frequency, &ue_dl);
 
-  // TODO : Update with SIB1
-
+  // Configure MSG2 decoder with our computed configuration
   PrachConfig prach_cfg;
-  prach_cfg.config_idx = conf.prach.config_idx;
-  prach_cfg.is_nr = conf.prach.is_nr;
-  prach_cfg.hs_flag = conf.prach.hs_flag;
-  prach_cfg.root_seq_idx = conf.prach.root_seq_idx;
-  prach_cfg.zero_corr_zone = conf.prach.zero_corr_zone;
-  prach_cfg.num_preambles = conf.prach.num_ra_preambles;
+  prach_cfg.config_idx = msg2_config.prach_config.config_idx;
+  prach_cfg.is_nr = msg2_config.prach_config.is_nr;
+  prach_cfg.hs_flag = msg2_config.prach_config.hs_flag;
+  prach_cfg.root_seq_idx = msg2_config.prach_config.root_seq_idx;
+  prach_cfg.zero_corr_zone = msg2_config.prach_config.zero_corr_zone;
+  prach_cfg.num_preambles = msg2_config.prach_config.num_preambles;
   decoder.set_prach_config(prach_cfg);
 
   if (!decoder.init()) {
@@ -277,9 +298,12 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
+  LOG_INFO("MSG2 decoder initialized with %zu RA-RNTIs for blind decoding",
+           msg2_config.ra_rnti_list.size());
+
   uint32_t total_msg2_found = 0;
   uint32_t current_slot_idx = 0;
-  
+
   while (rf_dev->receive(
       reinterpret_cast<std::complex<float> *>(data_buffer.data()), slot_len)) {
     std::vector<MSG2Result> results =
@@ -291,6 +315,9 @@ int main(int argc, char *argv[]) {
                "RAPID=%u TA=%u",
                total_msg2_found, msg2.sfn, msg2.slot_in_frame, msg2.ra_rnti,
                msg2.tc_rnti, msg2.rapid, msg2.timing_advance);
+
+      // Print detailed MSG2 information
+      MSG2Decoder::print_msg2_details(msg2, total_msg2_found);
     }
 
     current_slot_idx = (current_slot_idx + 1) % 10240;

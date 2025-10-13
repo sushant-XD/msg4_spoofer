@@ -88,6 +88,9 @@ public:
   // Get the list of monitored RA-RNTIs
   const std::vector<uint16_t> &get_ra_rnti_list() const { return ra_rnti_list; }
 
+  // Utility function to print detailed MSG2 information
+  static void print_msg2_details(const MSG2Result &result, uint32_t msg_count);
+
 private:
   // Initialize PHY configuration from SIB1 defaults
   void init_phy_cfg_from_sib1();

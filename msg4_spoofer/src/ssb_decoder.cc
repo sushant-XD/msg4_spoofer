@@ -182,6 +182,14 @@ void SSBDecoder::print_mib(const srsran_mib_nr_t &mib) {
             << static_cast<uint32_t>(mib.coreset0_idx) << std::endl;
   std::cout << "  SearchSpace0 Index     : "
             << static_cast<uint32_t>(mib.ss0_idx) << std::endl;
+  
+  // Calculate and display pdcch-ConfigSIB1 parameter
+  // pdcch-ConfigSIB1 = (coreset0_idx << 4) | ss0_idx
+  uint32_t pdcch_config_sib1 = (static_cast<uint32_t>(mib.coreset0_idx) << 4) | 
+                               static_cast<uint32_t>(mib.ss0_idx);
+  std::cout << "  pdcch-ConfigSIB1       : " << pdcch_config_sib1 
+            << " (0x" << std::hex << pdcch_config_sib1 << std::dec << ")" << std::endl;
+  
   std::cout << "  Cell Barred            : " << (mib.cell_barred ? "Yes" : "No")
             << std::endl;
   std::cout << "  Intra-Freq Reselection : "

@@ -3,6 +3,8 @@
 #include "logging.h"
 #include "srsran/mac/mac_sch_pdu_nr.h"
 #include <cstring>
+#include <iomanip>
+#include <iostream>
 
 MSG2Decoder::MSG2Decoder(uint32_t sample_rate_, uint32_t nof_prb_,
                          uint32_t pci_, double carrier_freq_)
@@ -140,6 +142,7 @@ std::vector<MSG2Result> MSG2Decoder::process_slot(cf_t *iq_samples,
       result.sfn = sfn;
       result.slot_in_frame = slot_in_frame;
       results.push_back(result);
+      break;
     }
   }
 
@@ -205,16 +208,18 @@ void MSG2Decoder::init_phy_cfg_from_sib1() {
       srsran_coreset_precoder_granularity_reg_bundle;
   phy_cfg.pdcch.coreset_present[0] = true;
 
-  // Search Space 0 (for RA-RNTI)
+  // Search Space 0 (for RA-RNTI) with ALL aggregation levels
+  // Per 3GPP TS 38.213 Section 10.1, SearchSpace0 must try all ALs:
+  // {1,2,4,8,16}
   srsran_search_space_t &ss0 = phy_cfg.pdcch.search_space[0];
   ss0.id = 0;
   ss0.coreset_id = 0;
   ss0.type = srsran_search_space_type_common_1; // Type1-PDCCH for RA
-  ss0.nof_candidates[0] = 0;                    // Aggregation level 1
-  ss0.nof_candidates[1] = 0;                    // Aggregation level 2
+  ss0.nof_candidates[0] = 4;                    // Aggregation level 1 (FIXED!)
+  ss0.nof_candidates[1] = 4;                    // Aggregation level 2 (FIXED!)
   ss0.nof_candidates[2] = 4;                    // Aggregation level 4
   ss0.nof_candidates[3] = 2;                    // Aggregation level 8
-  ss0.nof_candidates[4] = 1;                    // Aggregation level 16
+  ss0.nof_candidates[4] = 1;                    // Aggregation level 16 (FIXED!)
   ss0.duration = 1;
   ss0.nof_formats = 1;
   ss0.formats[0] = srsran_dci_format_nr_1_0; // DCI format 1_0 for MSG2
@@ -375,4 +380,33 @@ bool MSG2Decoder::parse_rar_pdu(uint8_t *data, uint32_t len,
   }
 
   return false;
+}
+
+void MSG2Decoder::print_msg2_details(const MSG2Result &result,
+                                     uint32_t msg_count) {
+  std::cout << "\n=== MSG2/RAR Information #" << msg_count
+            << " ===" << std::endl;
+  std::cout << "  Timing Information:" << std::endl;
+  std::cout << "    SFN                  : " << result.sfn << std::endl;
+  std::cout << "    Slot in Frame        : " << result.slot_in_frame
+            << std::endl;
+  std::cout << "    Absolute Slot        : " << result.slot_idx << std::endl;
+  std::cout << std::endl;
+  std::cout << "  RNTI Information:" << std::endl;
+  std::cout << "    RA-RNTI              : 0x" << std::hex << result.ra_rnti
+            << " (" << std::dec << result.ra_rnti << ")" << std::endl;
+  std::cout << "    TC-RNTI              : 0x" << std::hex << result.tc_rnti
+            << " (" << std::dec << result.tc_rnti << ")" << std::endl;
+  std::cout << std::endl;
+  std::cout << "  RAR Payload:" << std::endl;
+  std::cout << "    RAPID                : "
+            << static_cast<uint32_t>(result.rapid) << std::endl;
+  std::cout << "    Timing Advance       : " << result.timing_advance
+            << " (TA command = " << result.timing_advance << " * 16 * Tc)"
+            << std::endl;
+  std::cout << "    UL Grant             : 0x" << std::hex << result.ul_grant
+            << " (" << std::dec << result.ul_grant << ")" << std::endl;
+  std::cout << "    Valid                : " << (result.valid ? "Yes" : "No")
+            << std::endl;
+  std::cout << "===============================================" << std::endl;
 }

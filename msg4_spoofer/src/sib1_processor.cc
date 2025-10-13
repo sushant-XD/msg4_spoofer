@@ -117,15 +117,21 @@ bool SIB1Processor::search_dci(srsran_ue_dl_nr_t& ue_dl,
     }
   }
 
-  // Search for DCI
+  // Search for DCI with enhanced logging for comprehensive blind decoding
   std::array<srsran_dci_dl_nr_t, SRSRAN_SEARCH_SPACE_MAX_NOF_CANDIDATES_NR> dci_dl = {};
   int num_dci_dl = srsran_ue_dl_nr_find_dl_dci(&ue_dl, &slot_cfg, rnti, rnti_type,
                                                 dci_dl.data(), (uint32_t)dci_dl.size());
   
-  // Debug logging for DCI search
+  // Enhanced debug logging for comprehensive blind decoding analysis
   if (slot_cfg.idx % 100 == 0) {  // Log every 100 slots
     LOG_DEBUG("DCI search slot %u: processed %u coresets, found %d DCIs", 
               slot_cfg.idx, coresets_processed, num_dci_dl);
+    LOG_DEBUG("SearchSpace candidates: AL1=%u, AL2=%u, AL4=%u, AL8=%u, AL16=%u",
+              phy_cfg.pdcch.search_space[0].nof_candidates[0],
+              phy_cfg.pdcch.search_space[0].nof_candidates[1], 
+              phy_cfg.pdcch.search_space[0].nof_candidates[2],
+              phy_cfg.pdcch.search_space[0].nof_candidates[3],
+              phy_cfg.pdcch.search_space[0].nof_candidates[4]);
   }
   
   if (num_dci_dl > 0) {
@@ -240,6 +246,41 @@ bool SIB1Processor::decode_sib1_pdsch(srsran_ue_dl_nr_t& ue_dl,
   
   // Cleanup
   srsran_softbuffer_rx_free(&softbuffer_rx);
+  
+  return true;
+}
+
+bool SIB1Processor::configure_search_space_0(srsran_search_space_t &ss0_ref) {
+  // Configure SearchSpace0 for comprehensive SIB1 blind decoding
+  // Per 3GPP TS 38.213 Section 10.1, SearchSpace0 must try all ALs: {1,2,4,8,16}
+  
+  ss0_ref.id = 0;
+  ss0_ref.coreset_id = 0;
+  ss0_ref.type = srsran_search_space_type_common_0;
+  
+  // CRITICAL: Include ALL aggregation levels for comprehensive blind decoding
+  ss0_ref.nof_candidates[0] = 4; // AL1: 4 candidates
+  ss0_ref.nof_candidates[1] = 4; // AL2: 4 candidates  
+  ss0_ref.nof_candidates[2] = 4; // AL4: 4 candidates
+  ss0_ref.nof_candidates[3] = 2; // AL8: 2 candidates
+  ss0_ref.nof_candidates[4] = 1; // AL16: 1 candidate
+  
+  ss0_ref.duration = 1;
+  ss0_ref.nof_formats = 1;
+  ss0_ref.formats[0] = srsran_dci_format_nr_1_0;
+  
+  // Store reference for internal use (though it points to the same location as ss0_ref)
+  ss0 = ss0_ref;
+  
+  // Log the comprehensive blind decoding configuration
+  LOG_INFO("SIB1 SearchSpace0 configured for comprehensive blind decoding:");
+  LOG_INFO("  - AL1: %u candidates, AL2: %u candidates, AL4: %u candidates", 
+           ss0_ref.nof_candidates[0], ss0_ref.nof_candidates[1], ss0_ref.nof_candidates[2]);
+  LOG_INFO("  - AL8: %u candidates, AL16: %u candidates", 
+           ss0_ref.nof_candidates[3], ss0_ref.nof_candidates[4]);
+  LOG_INFO("  - Total candidates per slot: %u", 
+           ss0_ref.nof_candidates[0] + ss0_ref.nof_candidates[1] + ss0_ref.nof_candidates[2] + 
+           ss0_ref.nof_candidates[3] + ss0_ref.nof_candidates[4]);
   
   return true;
 }
