@@ -646,7 +646,18 @@ add_subdirectory(msg4_spoofer)
 # Set CMake policy to allow linking to a target defined in a subdirectory.
 cmake_policy(SET CMP0079 NEW)
 
-if(UHD_FOUND)
-  target_link_libraries(msg4_spoofer PRIVATE ${UHD_LIBRARIES})
-  message(STATUS "Linking executable msg4_spoofer to ${UHD_LIBRARIES}")
-endif(UHD_FOUND)
+# Check if msg4_spoofer target exists before linking
+if(TARGET msg4_spoofer)
+  if(UHD_FOUND)
+    target_link_libraries(msg4_spoofer PRIVATE ${UHD_LIBRARIES})
+    message(STATUS "Linking executable msg4_spoofer to ${UHD_LIBRARIES}")
+  endif(UHD_FOUND)
+endif()
+
+# Link msg2_decoder_standalone if it exists
+if(TARGET msg2_decoder_standalone)
+  if(UHD_FOUND)
+    target_link_libraries(msg2_decoder_standalone PRIVATE ${UHD_LIBRARIES})
+    message(STATUS "Linking executable msg2_decoder_standalone to ${UHD_LIBRARIES}")
+  endif(UHD_FOUND)
+endif()

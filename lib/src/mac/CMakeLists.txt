@@ -18,9 +18,12 @@
 # and at http://www.gnu.org/licenses/.
 #
 
-add_subdirectory(asn1)
-add_subdirectory(common)
-add_subdirectory(mac)
-add_subdirectory(phy)
-add_subdirectory(srslog)
-add_subdirectory(support)
+# Only build mac_rar_pdu_nr for msg2_decoder_standalone
+SET(SOURCES mac_rar_pdu_nr.cc)
+
+add_library(srsran_mac STATIC ${SOURCES})
+target_link_libraries(srsran_mac srsran_common)
+install(TARGETS srsran_mac DESTINATION ${LIBRARY_DIR} OPTIONAL)
+
+# Skip test subdirectory
+# add_subdirectory(test)

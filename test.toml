@@ -1,50 +1,75 @@
+# MSG2 Decoder Configuration File
+# This file configures the 5G NR RAR (Random Access Response) decoder
+
 [log]
-level = "debug"
+level = "info"  # Options: error, warning, info, debug
 
 [rf]
-freq_offset = 0
-rx_gain = 40.0
-tx_gain = 40.0
-srate = 23.04e6
-frequency = 1842.5e6
-nof_prb = 106
-N_id = 1
+# RF Device Configuration
+device_name = "uhd"              # Options: "uhd", "zmq", "file"
+device_args = "type=b200"        # Device-specific arguments
+file_path = ""                   # Path to IQ file (only for device_name = "file")
 
-# UHD Configuration (USRP Hardware)
+# RF Parameters
+rx_gain = 50.0                   # Receiver gain in dB
+tx_gain = 50.0                   # Transmitter gain in dB (not used for RX-only)
+srate = 23.04e6                  # Sample rate in Hz
+
+# Frequency Configuration
+dl_frequency = 1865.0e6          # Downlink frequency in Hz (Band 3 FDD)
+ul_frequency = 1770.0e6          # Uplink frequency in Hz (Band 3 FDD)
+ssb_frequency = 1857.65e6        # SSB center frequency in Hz
+
+# Cell Parameters
+nof_prb = 106                    # Number of Physical Resource Blocks (20 MHz = 106 PRBs)
+cell_id = 1                      # Physical Cell ID (N_ID)
+band = 3                         # 3GPP Band number
+
+[ssb]
+# Synchronization Signal Block Configuration
+scs = 15                         # Subcarrier spacing in kHz (15 or 30)
+pattern = "A"                    # SSB pattern: "A" for FDD, "B" or "C" for TDD
+duplex_mode = "FDD"              # Duplex mode: "FDD" or "TDD"
+period_ms = 10                   # SSB periodicity in milliseconds
+
+[prach]
+# Physical Random Access Channel Configuration
+config_idx = 1                   # PRACH configuration index (0-255)
+                                 # Determines PRACH format and time resources
+                                 # Common values:
+                                 #   1: Format A1, even slots (0,2,4,6,8) - typical for FDD
+                                 #   16: Format B1, slot 1
+                                 #   27: Format A1/B1, slot 4
+                                 #   52: Format C0, slot 1
+is_nr = true                     # Set to true for 5G NR
+hs_flag = false                  # High-speed flag
+root_sequence_index = 1          # Root sequence index
+zero_correlation_zone = 0        # Zero correlation zone config
+freq_offset = 0                  # PRACH frequency offset
+num_ra_preambles = 64            # Number of RA preambles
+
+[rar]
+# Random Access Response Configuration
+# Note: ra_rnti_list is now calculated automatically from PRACH config
+# The following line is kept for reference but will be ignored:
+# ra_rnti_list = [1, 2, 3, 4]   # (Auto-calculated from prach.config_idx)
+coreset0_idx = 0                 # CORESET0 index from MIB (0-15)
+ss0_idx = 0                      # Search Space 0 index from MIB (0-15)
+offset_to_carrier = 0            # Offset to carrier in PRBs
+ssb_offset = 0                   # SSB subcarrier offset (kSSB)
+dmrs_typeA_pos = 2               # DMRS Type A position (2 or 3)
+nof_rx_antennas = 1              # Number of receive antennas
+
+# Example configurations for different devices:
+
+# UHD (USRP B200/B210):
 # device_name = "uhd"
 # device_args = "type=b200"
 
-# ZMQ Configuration (Network-based simulation)
+# ZMQ (Network simulation):
 # device_name = "zmq"
-# device_args = "tx_port=tcp://*:2000,rx_port=tcp://localhost:2001,id=enb"
+# device_args = "tx_port=tcp://*:2000,rx_port=tcp://localhost:2001,id=ue,base_srate=23.04e6"
 
-# File-based Configuration (read from IQ files)
-device_name = "file"
-file_path = "/home/ntia/msg4_spoofer/uhd_iq_data.fc32"
-
-[cell]
-
-[ssb]
-numerology = 0 # not used right now
-pattern = "A" # not used right now
-scs = 15 # not used right now
-scan_duration = 1000 # in ms
-
-
-[prach]
-config_idx = 1
-is_nr = true
-hs_flag = false
-root_sequence_index = 1
-zero_correlation_zone = 0
-num_ra_preambles = 64
-time_delay = 1 # in millisecond
-
-[msg2]
-max_rnti_candidates = 200
-search_space_id = 1
-coreset_id = 0
-enable_multiple_rnti = true
-msg2_window_ms = 10
-
-
+# File input:
+# device_name = "file"
+# file_path = "/path/to/iq_samples.fc32"

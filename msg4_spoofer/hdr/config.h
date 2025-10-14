@@ -34,8 +34,10 @@ typedef struct rf_config_s {
 
   double dl_frequency;
   double ul_frequency;
+  double ssb_frequency;
   uint32_t nof_prb;
   uint32_t N_id;
+  uint32_t band;
 
   std::string device_name;
   std::string device_args;
@@ -48,6 +50,7 @@ typedef struct ssb_config_s {
   srsran_subcarrier_spacing_t scs = srsran_subcarrier_spacing_15kHz;
   srsran_duplex_mode_t duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
   double scan_duration;
+  uint32_t period_ms;
 } ssb_config_t;
 
 /* struct available in prach.h*/
@@ -65,10 +68,22 @@ typedef struct prach_config_s {
   // bool enable_freq_domain_offset_calc;
 } prach_config_t;
 
+/* RAR (MSG2) decoder configuration */
+typedef struct rar_config_s {
+  std::vector<uint16_t> ra_rnti_list;
+  uint8_t coreset0_idx;
+  uint8_t ss0_idx;
+  uint32_t offset_to_carrier;
+  uint32_t ssb_offset;
+  uint8_t dmrs_typeA_pos;
+  uint32_t nof_rx_antennas;
+} rar_config_t;
+
 typedef struct spoofer_config_s {
   rf_config_t rf;
   ssb_config_t ssb;
   prach_config_t prach;
+  rar_config_t rar;
 } spoofer_config_t;
 
 static spoofer_config_t load(std::string config_path) {
@@ -76,26 +91,57 @@ static spoofer_config_t load(std::string config_path) {
   toml::table toml = toml::parse_file(config_path);
   spoofer_config_t conf;
 
+  // RF Configuration
   conf.rf.freq_offset = toml["rf"]["freq_offset"].value_or(0);
-  conf.rf.rx_gain = toml["rf"]["rx_gain"].value_or(0.0);
-  conf.rf.tx_gain = toml["rf"]["tx_gain"].value_or(0.0);
+  conf.rf.rx_gain = toml["rf"]["rx_gain"].value_or(50.0);
+  conf.rf.tx_gain = toml["rf"]["tx_gain"].value_or(50.0);
   conf.rf.srate = toml["rf"]["srate"].value_or(23.04e6);
 
-  conf.rf.dl_frequency = toml["rf"]["downlink_frequency"].value_or(1842.5e6);
-  conf.rf.ul_frequency = toml["rf"]["uplink_frequency"].value_or(1842.5e6);
+  conf.rf.dl_frequency = toml["rf"]["dl_frequency"].value_or(1865.0e6);
+  conf.rf.ul_frequency = toml["rf"]["ul_frequency"].value_or(1770.0e6);
+  conf.rf.ssb_frequency = toml["rf"]["ssb_frequency"].value_or(1857.65e6);
   conf.rf.nof_prb = toml["rf"]["nof_prb"].value_or(106);
-  conf.rf.N_id = toml["rf"]["N_id"].value_or(1);
+  conf.rf.N_id = toml["rf"]["cell_id"].value_or(1);
+  conf.rf.band = toml["rf"]["band"].value_or(3);
 
   conf.rf.device_name = toml["rf"]["device_name"].value_or("uhd");
   conf.rf.device_args = toml["rf"]["device_args"].value_or("type=b200");
   conf.rf.file_path = toml["rf"]["file_path"].value_or("");
 
-  // Preconfigured right now
-  conf.ssb.pattern = SRSRAN_SSB_PATTERN_A;
-  conf.ssb.scs = srsran_subcarrier_spacing_15kHz;
-  conf.ssb.duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
-  conf.ssb.scan_duration = toml["ssb"]["scan_duration"].value_or(1000);
+  // SSB Configuration
+  std::string pattern_str = toml["ssb"]["pattern"].value_or("A");
+  if (pattern_str == "A") {
+    conf.ssb.pattern = SRSRAN_SSB_PATTERN_A;
+  } else if (pattern_str == "B") {
+    conf.ssb.pattern = SRSRAN_SSB_PATTERN_B;
+  } else if (pattern_str == "C") {
+    conf.ssb.pattern = SRSRAN_SSB_PATTERN_C;
+  } else {
+    conf.ssb.pattern = SRSRAN_SSB_PATTERN_A;
+  }
 
+  uint32_t scs_khz = toml["ssb"]["scs"].value_or(15);
+  if (scs_khz == 15) {
+    conf.ssb.scs = srsran_subcarrier_spacing_15kHz;
+  } else if (scs_khz == 30) {
+    conf.ssb.scs = srsran_subcarrier_spacing_30kHz;
+  } else {
+    conf.ssb.scs = srsran_subcarrier_spacing_15kHz;
+  }
+
+  std::string duplex_str = toml["ssb"]["duplex_mode"].value_or("FDD");
+  if (duplex_str == "FDD") {
+    conf.ssb.duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
+  } else if (duplex_str == "TDD") {
+    conf.ssb.duplex_mode = SRSRAN_DUPLEX_MODE_TDD;
+  } else {
+    conf.ssb.duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
+  }
+
+  conf.ssb.scan_duration = toml["ssb"]["scan_duration"].value_or(1000.0);
+  conf.ssb.period_ms = toml["ssb"]["period_ms"].value_or(10);
+
+  // PRACH Configuration
   conf.prach.config_idx =
       toml["prach"]["config_idx"].value_or(PRACH_CONFIG_IDX_DEFAULT);
   conf.prach.is_nr = toml["prach"]["is_nr"].value_or(true);
@@ -108,7 +154,29 @@ static spoofer_config_t load(std::string config_path) {
       PRACH_NUM_RA_PREAMBLES_DEFAULT);
   conf.prach.time_delay = toml["prach"]["time_delay"].value_or(1);
 
-  std::string log_level_str = toml["log"]["level"].value_or("debug");
+  // RAR Configuration
+  if (toml["rar"]["ra_rnti_list"].is_array()) {
+    auto rnti_array = toml["rar"]["ra_rnti_list"].as_array();
+    for (const auto& elem : *rnti_array) {
+      if (elem.is_integer()) {
+        int64_t val = elem.as_integer()->get();
+        conf.rar.ra_rnti_list.push_back(static_cast<uint16_t>(val));
+      }
+    }
+  }
+  if (conf.rar.ra_rnti_list.empty()) {
+    conf.rar.ra_rnti_list = {1, 2, 3, 4}; // Default
+  }
+
+  conf.rar.coreset0_idx = toml["rar"]["coreset0_idx"].value_or(0);
+  conf.rar.ss0_idx = toml["rar"]["ss0_idx"].value_or(0);
+  conf.rar.offset_to_carrier = toml["rar"]["offset_to_carrier"].value_or(0);
+  conf.rar.ssb_offset = toml["rar"]["ssb_offset"].value_or(0);
+  conf.rar.dmrs_typeA_pos = toml["rar"]["dmrs_typeA_pos"].value_or(2);
+  conf.rar.nof_rx_antennas = toml["rar"]["nof_rx_antennas"].value_or(1);
+
+  // Logging Configuration
+  std::string log_level_str = toml["log"]["level"].value_or("info");
 
   if (log_level_str == "error")
     log_level = ERROR;
