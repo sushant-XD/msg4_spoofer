@@ -68,10 +68,9 @@ void phy_state_nr::set_dl_pending_grant(const srsran::phy_cfg_nr_t &cfg,
   grant.enable = true;
 }
 
-bool phy_state_nr::get_dl_pending_grant(uint32_t tti_rx,
-                                        srsran_sch_cfg_nr_t &pdsch_cfg,
-                                        srsran_harq_ack_resource_t &ack_resource,
-                                        uint32_t &pid) {
+bool phy_state_nr::get_dl_pending_grant(
+    uint32_t tti_rx, srsran_sch_cfg_nr_t &pdsch_cfg,
+    srsran_harq_ack_resource_t &ack_resource, uint32_t &pid) {
   std::lock_guard<std::mutex> lock(dl_mutex);
 
   auto it = pending_dl_grants.find(tti_rx);
@@ -98,39 +97,35 @@ void phy_state_nr::clear_pending_grants() {
 // RAR DECODER CLASS IMPLEMENTATION
 // ============================================================================
 
-RARDecoder::RARDecoder(const RARSearchConfig& config)
-    : config_(config),
-      logger_(srslog::fetch_basic_logger("rar_search")),
-      rar_count_(0),
-      slot_number_(0) {
-  
+RARDecoder::RARDecoder(const RARSearchConfig &config)
+    : config_(config), logger_(srslog::fetch_basic_logger("rar_search")),
+      rar_count_(0), slot_number_(0) {
+
   // Calculate derived parameters
   slot_per_subframe_ = 1 << config_.scs_common;
   uint32_t sf_len = static_cast<uint32_t>(config_.sample_rate / 1000.0);
   slot_len_ = sf_len / slot_per_subframe_;
-  
+
   logger_.info("RAR Decoder initialized");
   logger_.info("  Slot length: %u samples", slot_len_);
   logger_.info("  Slots per subframe: %u", slot_per_subframe_);
 }
 
-RARDecoder::~RARDecoder() {
-  logger_.info("RAR Decoder destroyed");
-}
+RARDecoder::~RARDecoder() { logger_.info("RAR Decoder destroyed"); }
 
 bool RARDecoder::init() {
   // Initialize PHY configuration
   init_phy_cfg();
-  
+
   // Configure CORESET0 and SS0
   if (!configure_phy_cfg_basic()) {
     logger_.error("Failed to configure PHY");
     return false;
   }
-  
+
   // Initialize PHY state
   phy_state_.clear_pending_grants();
-  
+
   logger_.info("RAR Decoder initialization complete");
   return true;
 }
@@ -144,9 +139,9 @@ void RARDecoder::init_phy_cfg() {
   phy_cfg_.carrier.nof_prb = config_.nof_prb;
   phy_cfg_.carrier.pci = config_.ncellid;
   phy_cfg_.carrier.max_mimo_layers = 1;
-  
+
   phy_cfg_.duplex.mode = config_.duplex_mode;
-  
+
   phy_cfg_.ssb.periodicity_ms = config_.ssb_period_ms;
   phy_cfg_.ssb.position_in_burst[0] = true;
   phy_cfg_.ssb.scs = config_.scs_ssb;
@@ -164,7 +159,8 @@ bool RARDecoder::configure_phy_cfg_basic() {
 
   coreset0->id = 0;
   coreset0->mapping_type = srsran_coreset_mapping_type_non_interleaved;
-  coreset0->precoder_granularity = srsran_coreset_precoder_granularity_reg_bundle;
+  coreset0->precoder_granularity =
+      srsran_coreset_precoder_granularity_reg_bundle;
 
   phy_cfg_.pdcch.coreset_present[0] = true;
 
@@ -174,9 +170,9 @@ bool RARDecoder::configure_phy_cfg_basic() {
   ss0->type = srsran_search_space_type_common_1;
   ss0->nof_candidates[0] = 0;
   ss0->nof_candidates[1] = 0;
-  ss0->nof_candidates[2] = 4;
-  ss0->nof_candidates[3] = 2;
-  ss0->nof_candidates[4] = 1;
+  ss0->nof_candidates[2] = 1;
+  ss0->nof_candidates[3] = 0;
+  ss0->nof_candidates[4] = 0;
   ss0->duration = 1;
   ss0->nof_formats = 1;
   ss0->formats[0] = srsran_dci_format_nr_1_0;
@@ -235,12 +231,14 @@ bool RARDecoder::search_rar_in_slot(cf_t *data_buffer, uint32_t slot_number) {
     srsran_sch_cfg_nr_t pdsch_cfg = {};
     srsran_harq_ack_resource_t ack_resource = {};
 
-    if (!phy_state_.get_dl_pending_grant(slot_cfg.idx, pdsch_cfg, ack_resource, pid)) {
+    if (!phy_state_.get_dl_pending_grant(slot_cfg.idx, pdsch_cfg, ack_resource,
+                                         pid)) {
       logger_.debug("No grant found for RA-RNTI 0x%04x", ra_rnti);
       continue;
     }
 
-    logger_.info("Found DCI for RA-RNTI 0x%04x, attempting PDSCH decode", ra_rnti);
+    logger_.info("Found DCI for RA-RNTI 0x%04x, attempting PDSCH decode",
+                 ra_rnti);
 
     // Initialize buffer for decoded data
     srsran::unique_byte_buffer_t data = srsran::make_byte_buffer();
@@ -264,7 +262,8 @@ bool RARDecoder::search_rar_in_slot(cf_t *data_buffer, uint32_t slot_number) {
     }
 
     // Decode PDSCH
-    if (!ue_dl_pdsch_decode(ue_dl, pdsch_cfg, slot_cfg, pdsch_res, softbuffer_rx)) {
+    if (!ue_dl_pdsch_decode(ue_dl, pdsch_cfg, slot_cfg, pdsch_res,
+                            softbuffer_rx)) {
       srsran_softbuffer_rx_free(&softbuffer_rx);
       continue;
     }
@@ -325,7 +324,8 @@ bool RARDecoder::init_ue_dl(srsran_ue_dl_nr_t &ue_dl, cf_t *buffer) {
     return false;
   }
 
-  if (srsran_ue_dl_nr_set_carrier(&ue_dl, &phy_cfg_.carrier) != SRSRAN_SUCCESS) {
+  if (srsran_ue_dl_nr_set_carrier(&ue_dl, &phy_cfg_.carrier) !=
+      SRSRAN_SUCCESS) {
     return false;
   }
 
@@ -339,7 +339,8 @@ bool RARDecoder::init_ue_dl(srsran_ue_dl_nr_t &ue_dl, cf_t *buffer) {
 }
 
 bool RARDecoder::update_ue_dl(srsran_ue_dl_nr_t &ue_dl) {
-  if (srsran_ue_dl_nr_set_carrier(&ue_dl, &phy_cfg_.carrier) != SRSRAN_SUCCESS) {
+  if (srsran_ue_dl_nr_set_carrier(&ue_dl, &phy_cfg_.carrier) !=
+      SRSRAN_SUCCESS) {
     return false;
   }
   srsran_dci_cfg_nr_t dci_cfg = phy_cfg_.get_dci_cfg();
@@ -402,7 +403,8 @@ bool RARDecoder::ue_dl_pdsch_decode(srsran_ue_dl_nr_t &ue_dl,
   srsran_softbuffer_rx_reset(&softbuffer_rx);
   pdsch_cfg.grant.tb[0].softbuffer.rx = &softbuffer_rx;
 
-  if (srsran_ue_dl_nr_decode_pdsch(&ue_dl, &slot_cfg, &pdsch_cfg, &pdsch_res) != 0) {
+  if (srsran_ue_dl_nr_decode_pdsch(&ue_dl, &slot_cfg, &pdsch_cfg, &pdsch_res) !=
+      0) {
     logger_.error("Error srsran_ue_dl_nr_decode_pdsch");
     return false;
   }
@@ -416,7 +418,8 @@ bool RARDecoder::ue_dl_pdsch_decode(srsran_ue_dl_nr_t &ue_dl,
   return true;
 }
 
-bool RARDecoder::process_rar_pdu(uint8_t *data, uint32_t len, uint16_t ra_rnti, uint32_t slot_number) {
+bool RARDecoder::process_rar_pdu(uint8_t *data, uint32_t len, uint16_t ra_rnti,
+                                 uint32_t slot_number) {
   srsran::mac_rar_pdu_nr rar_pdu;
 
   if (!rar_pdu.unpack(data, len)) {
@@ -430,7 +433,8 @@ bool RARDecoder::process_rar_pdu(uint8_t *data, uint32_t len, uint16_t ra_rnti, 
     return false;
   }
 
-  logger_.info("RAR PDU for RA-RNTI 0x%04x contains %u subPDU(s)", ra_rnti, num_subpdus);
+  logger_.info("RAR PDU for RA-RNTI 0x%04x contains %u subPDU(s)", ra_rnti,
+               num_subpdus);
 
   for (uint32_t i = 0; i < num_subpdus; i++) {
     const srsran::mac_rar_subpdu_nr subpdu = rar_pdu.get_subpdu(i);
@@ -438,21 +442,25 @@ bool RARDecoder::process_rar_pdu(uint8_t *data, uint32_t len, uint16_t ra_rnti, 
     if (subpdu.has_rapid()) {
       uint16_t tc_rnti = subpdu.get_temp_crnti();
       uint32_t ta = subpdu.get_ta();
-      std::array<uint8_t, srsran::mac_rar_subpdu_nr::UL_GRANT_NBITS> ul_grant = subpdu.get_ul_grant();
+      std::array<uint8_t, srsran::mac_rar_subpdu_nr::UL_GRANT_NBITS> ul_grant =
+          subpdu.get_ul_grant();
 
       logger_.info("  SubPDU %u:", i);
       logger_.info("    RAPID:     %u", subpdu.get_rapid());
       logger_.info("    TC-RNTI:   0x%04x (%u)", tc_rnti, tc_rnti);
       logger_.info("    TA:        %u", ta);
-      logger_.info("    UL Grant:  %s", buffer_to_hex_string(ul_grant.data(), ul_grant.size()).c_str());
+      logger_.info(
+          "    UL Grant:  %s",
+          buffer_to_hex_string(ul_grant.data(), ul_grant.size()).c_str());
 
-      uint32_t scs_common_khz = 15 << static_cast<int>(srsran_subcarrier_spacing_15kHz);
+      uint32_t scs_common_khz =
+          15 << static_cast<int>(srsran_subcarrier_spacing_15kHz);
       double Tc = 1.0 / (480e3 * 4096);
       uint32_t n_timing_advance = ta * 16 * 64 / (1 << scs_common_khz) + 0;
       double ta_time = static_cast<double>(n_timing_advance) * Tc;
 
       logger_.info("    TA (time): %.6f us", ta_time * 1e6);
-      
+
       // Store decoded RAR grant
       rar_grant_t grant;
       grant.slot_number = slot_number;
@@ -462,17 +470,20 @@ bool RARDecoder::process_rar_pdu(uint8_t *data, uint32_t len, uint16_t ra_rnti, 
       grant.ta = ta;
       grant.ta_time_us = ta_time * 1e6;
       grant.ul_grant = ul_grant;
-      
+
       // Get current timestamp
       auto now = std::chrono::system_clock::now();
-      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
+      auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+          now.time_since_epoch());
       grant.timestamp_ms = ms.count();
-      
+
       rar_grants_.push_back(grant);
-      logger_.debug("Stored RAR grant: TC-RNTI=0x%04x, total grants=%zu", tc_rnti, rar_grants_.size());
-      
+      logger_.debug("Stored RAR grant: TC-RNTI=0x%04x, total grants=%zu",
+                    tc_rnti, rar_grants_.size());
+
     } else if (subpdu.has_backoff()) {
-      logger_.info("  SubPDU %u: Backoff indicator = %u", i, subpdu.get_backoff());
+      logger_.info("  SubPDU %u: Backoff indicator = %u", i,
+                   subpdu.get_backoff());
     }
   }
 
