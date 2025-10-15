@@ -4,6 +4,7 @@
 #include "msg2_decoder_standalone.h"
 #include "rar_decoder.h"
 #include "rf_base.h"
+#include "ssb_decoder.h"
 #include "srsran/srslog/srslog.h"
 #include <csignal>
 #include <iostream>
@@ -139,8 +140,65 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
+  // === SSB SYNCHRONIZATION ===
+  logger.info("Searching for SSB to synchronize...");
+  SSBDecoder ssb_decoder(config.sample_rate, config.nof_prb, config.ncellid, config.dl_freq);
+  
+  if (!ssb_decoder.init()) {
+    logger.error("Failed to initialize SSB decoder");
+    return EXIT_FAILURE;
+  }
+  
+  // Convert SSB pattern enum to string
+  std::string ssb_pattern_str;
+  switch (config.ssb_pattern) {
+    case SRSRAN_SSB_PATTERN_A: ssb_pattern_str = "A"; break;
+    case SRSRAN_SSB_PATTERN_B: ssb_pattern_str = "B"; break;
+    case SRSRAN_SSB_PATTERN_C: ssb_pattern_str = "C"; break;
+    default: ssb_pattern_str = "A"; break;
+  }
+  
+  if (!ssb_decoder.configure_ssb(ssb_pattern_str, 15 << config.scs_ssb, 0.0)) {
+    logger.error("Failed to configure SSB");
+    return EXIT_FAILURE;
+  }
+
+  // Read initial buffer for SSB search (need at least 20ms for SSB period)
+  uint32_t ssb_search_samples = static_cast<uint32_t>(config.sample_rate * 0.02); // 20ms
+  std::vector<std::complex<float>> ssb_buffer(ssb_search_samples);
+  
+  if (!rf_dev->receive(ssb_buffer.data(), ssb_search_samples)) {
+    logger.error("Failed to receive samples for SSB search");
+    return EXIT_FAILURE;
+  }
+
+  SsbSearchResult ssb_result = ssb_decoder.scan_ssb(ssb_buffer.data(), ssb_search_samples, config.ncellid);
+  
+  if (!ssb_result.found) {
+    logger.error("SSB not found! Cannot synchronize.");
+    logger.error("Check: PCI=%u, frequency=%.2f MHz", config.ncellid, config.dl_freq/1e6);
+    return EXIT_FAILURE;
+  }
+
+  logger.info("SSB FOUND!");
+  logger.info("  PCI:       %u", ssb_result.pci);
+  logger.info("  SSB Index: %u", ssb_result.ssb_idx);
+  logger.info("  SNR:       %.1f dB", ssb_result.snr_db);
+  logger.info("  RSRP:      %.1f dBm", ssb_result.rsrp_dbm);
+  logger.info("  SFN:       %u", ssb_result.mib.sfn);
+  logger.info("  Time Offset: %u samples", ssb_result.t_offset);
+  logger.info("");
+
+  // Calculate slot alignment from SSB timing
+  // SSB appears at specific slots, we can use this to align our slot counter
+  uint32_t samples_per_slot = slot_len;
+  uint32_t slot_offset = ssb_result.t_offset / samples_per_slot;
+  
+  logger.info("Synchronized! Starting RAR search from slot %u...", slot_offset);
+  logger.info("");
+
   std::vector<cf_t> data_buffer(sf_len);
-  uint32_t slot_number = 0;
+  uint32_t slot_number = slot_offset;
 
   // Main RX loop: read samples and process
   while (keep_running &&

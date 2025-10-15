@@ -16,6 +16,7 @@ add_executable(msg4_spoofer
     ${COMMON_SOURCES} 
     ${SPOOFER_SRC_DIR}/main.cc
     ${SPOOFER_SRC_DIR}/rar_decoder.cc
+    ${SPOOFER_SRC_DIR}/ssb_decoder.cc
 )
 
 set_target_properties(msg4_spoofer PROPERTIES
