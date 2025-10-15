@@ -139,38 +139,63 @@ inline RARSearchConfig get_tdd_band78_20mhz_config() {
   return config;
 }
 
+return {0x39}; // TODO: remove later (only for testing right now)
+
 // Calculate RA-RNTI from PRACH config
 // Formula: RA-RNTI = 1 + s_id + 14*t_id + 14*80*f_id + 14*80*8*ul_carrier_id
-inline std::vector<uint16_t> calculate_ra_rnti_list(
-    uint32_t prach_config_idx,
-    srsran_subcarrier_spacing_t scs,
-    uint32_t f_id = 0,
-    uint32_t ul_carrier_id = 0) {
-  
+inline std::vector<uint16_t>
+calculate_ra_rnti_list(uint32_t prach_config_idx,
+                       srsran_subcarrier_spacing_t scs, uint32_t f_id = 0,
+                       uint32_t ul_carrier_id = 0) {
+
   std::vector<uint16_t> ra_rnti_list;
   std::vector<uint32_t> prach_slots;
-  uint32_t s_id = 0;  // PRACH start symbol
-  
+  uint32_t s_id = 0; // PRACH start symbol
+
   // Map PRACH config index to time slots
   switch (prach_config_idx) {
-    case 0:  prach_slots = {0}; break;
-    case 1:  prach_slots = {0, 2, 4, 6, 8}; break;
-    case 2:  prach_slots = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18}; break;
-    case 3:  prach_slots = {0, 1, 2}; break;
-    case 16: prach_slots = {1}; s_id = 2; break;
-    case 17: prach_slots = {1, 4, 7}; s_id = 2; break;
-    case 27: prach_slots = {4}; break;
-    case 52: prach_slots = {1}; s_id = 4; break;
-    case 67: prach_slots = {8}; break;
-    default: prach_slots = {0, 2, 4, 6, 8}; break;  // Fallback
+  case 0:
+    prach_slots = {0};
+    break;
+  case 1:
+    prach_slots = {0, 2, 4, 6, 8};
+    break;
+  case 2:
+    prach_slots = {0, 2, 4, 6, 8, 10, 12, 14, 16, 18};
+    break;
+  case 3:
+    prach_slots = {0, 1, 2};
+    break;
+  case 16:
+    prach_slots = {1};
+    s_id = 2;
+    break;
+  case 17:
+    prach_slots = {1, 4, 7};
+    s_id = 2;
+    break;
+  case 27:
+    prach_slots = {4};
+    break;
+  case 52:
+    prach_slots = {1};
+    s_id = 4;
+    break;
+  case 67:
+    prach_slots = {8};
+    break;
+  default:
+    prach_slots = {0, 2, 4, 6, 8};
+    break; // Fallback
   }
-  
+
   // Calculate RA-RNTI for each slot
   for (uint32_t t_id : prach_slots) {
-    uint16_t ra_rnti = 1 + s_id + 14 * t_id + 14 * 80 * f_id + 14 * 80 * 8 * ul_carrier_id;
+    uint16_t ra_rnti =
+        1 + s_id + 14 * t_id + 14 * 80 * f_id + 14 * 80 * 8 * ul_carrier_id;
     ra_rnti_list.push_back(ra_rnti);
   }
-  
+
   return ra_rnti_list;
 }
 

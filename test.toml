@@ -6,9 +6,9 @@ level = "info"  # Options: error, warning, info, debug
 
 [rf]
 # RF Device Configuration
-device_name = "uhd"              # Options: "uhd", "zmq", "file"
+device_name = "file"              # Options: "uhd", "zmq", "file"
 device_args = "type=b200"        # Device-specific arguments
-file_path = ""                   # Path to IQ file (only for device_name = "file")
+file_path = "/home/ntia/msg4_spoofer/uhd_iq_data.fc32"                   # Path to IQ file (only for device_name = "file")
 
 # RF Parameters
 rx_gain = 50.0                   # Receiver gain in dB
@@ -16,9 +16,9 @@ tx_gain = 50.0                   # Transmitter gain in dB (not used for RX-only)
 srate = 23.04e6                  # Sample rate in Hz
 
 # Frequency Configuration
-dl_frequency = 1865.0e6          # Downlink frequency in Hz (Band 3 FDD)
-ul_frequency = 1770.0e6          # Uplink frequency in Hz (Band 3 FDD)
-ssb_frequency = 1857.65e6        # SSB center frequency in Hz
+dl_frequency = 1842.5e6          # Downlink frequency in Hz (Band 3 FDD)
+ul_frequency = 1747.5e6          # Uplink frequency in Hz (Band 3 FDD)
+ssb_frequency = 1842.05e6        # SSB center frequency in Hz
 
 # Cell Parameters
 nof_prb = 106                    # Number of Physical Resource Blocks (20 MHz = 106 PRBs)
