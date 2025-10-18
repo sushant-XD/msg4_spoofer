@@ -4,13 +4,13 @@
 #include "msg2_decoder_standalone.h"
 #include "rar_decoder.h"
 #include "rf_base.h"
-#include "ssb_decoder.h"
 #include "srsran/srslog/srslog.h"
+#include "ssb_decoder.h"
 #include <csignal>
 #include <iostream>
 
 static volatile bool keep_running = true;
-
+void print_config(RARSearchConfig &config, srslog::basic_logger &logger);
 void signal_handler(int signal) {
   if (signal == SIGINT || signal == SIGTERM) {
     keep_running = false;
@@ -93,7 +93,6 @@ int main(int argc, char *argv[]) {
   srslog::basic_logger &logger = init_logger(srslog::basic_levels::info);
 
   logger.info("5G NR RAR Search Tool");
-  logger.info("=====================");
   logger.info("Config: %s", config_path.c_str());
 
   RARDecoder decoder(config);
@@ -102,37 +101,11 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
+  print_config(config, logger);
+
   uint32_t slot_len = decoder.get_slot_len();
   uint32_t slots_per_subframe = decoder.get_slots_per_subframe();
-  uint32_t sf_len = slot_len * slots_per_subframe;
-
-  logger.info("");
-  logger.info("Cell Config:");
-  logger.info("  Band:       %u", config.band);
-  logger.info("  PRBs:       %u", config.nof_prb);
-  logger.info("  Cell ID:    %u", config.ncellid);
-  logger.info("  DL Freq:    %.2f MHz", config.dl_freq / 1e6);
-  logger.info("  UL Freq:    %.2f MHz", config.ul_freq / 1e6);
-  logger.info("  SSB Freq:   %.2f MHz", config.ssb_freq / 1e6);
-  logger.info("  SCS:        %u kHz", 15 << config.scs_common);
-  logger.info("  Samp Rate:  %.2f MHz", config.sample_rate / 1e6);
-  logger.info("  Slot Len:   %u samples", slot_len);
-  logger.info("  Duplex:     %s",
-              config.duplex_mode == SRSRAN_DUPLEX_MODE_FDD ? "FDD" : "TDD");
-  logger.info("  Device:     %s", conf.rf.device_name.c_str());
-
-  logger.info("");
-  logger.info("PRACH Config:");
-  logger.info("  Index:      %u", conf.prach.config_idx);
-  logger.info("  RA-RNTIs:   %zu values", config.ra_rnti_list.size());
-  for (size_t i = 0; i < config.ra_rnti_list.size(); i++) {
-    logger.info("    [%zu] %u (0x%04x)", i, config.ra_rnti_list[i],
-                config.ra_rnti_list[i]);
-  }
-
-  logger.info("");
-  logger.info("Starting search (Ctrl+C to stop)...");
-  logger.info("");
+  uint32_t sf_len = SRSRAN_SF_LEN_PRB(config.nof_prb);
 
   std::unique_ptr<RFBase> rf_dev = create_rf_instance(conf);
   if (!rf_dev) {
@@ -142,44 +115,27 @@ int main(int argc, char *argv[]) {
 
   // === SSB SYNCHRONIZATION ===
   logger.info("Searching for SSB to synchronize...");
-  SSBDecoder ssb_decoder(config.sample_rate, config.nof_prb, config.ncellid, config.dl_freq);
-  
-  if (!ssb_decoder.init()) {
+  SSBDecoder ssb_decoder;
+
+  if (!ssb_decoder.init(config)) {
     logger.error("Failed to initialize SSB decoder");
     return EXIT_FAILURE;
   }
-  
-  // Convert SSB pattern enum to string
-  std::string ssb_pattern_str;
-  switch (config.ssb_pattern) {
-    case SRSRAN_SSB_PATTERN_A: ssb_pattern_str = "A"; break;
-    case SRSRAN_SSB_PATTERN_B: ssb_pattern_str = "B"; break;
-    case SRSRAN_SSB_PATTERN_C: ssb_pattern_str = "C"; break;
-    default: ssb_pattern_str = "A"; break;
-  }
-  
-  if (!ssb_decoder.configure_ssb(ssb_pattern_str, 15 << config.scs_ssb, 0.0)) {
-    logger.error("Failed to configure SSB");
-    return EXIT_FAILURE;
-  }
 
-  // Read initial buffer for SSB search (need at least 20ms for SSB period)
-  uint32_t ssb_search_samples = static_cast<uint32_t>(config.sample_rate * 0.02); // 20ms
-  std::vector<std::complex<float>> ssb_buffer(ssb_search_samples);
-  
-  if (!rf_dev->receive(ssb_buffer.data(), ssb_search_samples)) {
-    logger.error("Failed to receive samples for SSB search");
-    return EXIT_FAILURE;
-  }
+  cf_t *buffer = srsran_vec_cf_malloc(sf_len);
+  SsbSearchResult ssb_result;
+  while (true) {
+    if (!rf_dev->receive(buffer, sf_len)) {
+      logger.error("Failed to receive samples for SSB search");
+      return EXIT_FAILURE;
+    }
 
-  SsbSearchResult ssb_result = ssb_decoder.scan_ssb(ssb_buffer.data(), ssb_search_samples, config.ncellid);
-  
-  if (!ssb_result.found) {
-    logger.error("SSB not found! Cannot synchronize.");
-    logger.error("Check: PCI=%u, frequency=%.2f MHz", config.ncellid, config.dl_freq/1e6);
-    return EXIT_FAILURE;
-  }
+    ssb_result = ssb_decoder.scan_ssb(buffer, sf_len, config.ncellid);
 
+    if (ssb_result.found) {
+      break;
+    }
+  }
   logger.info("SSB FOUND!");
   logger.info("  PCI:       %u", ssb_result.pci);
   logger.info("  SSB Index: %u", ssb_result.ssb_idx);
@@ -193,7 +149,7 @@ int main(int argc, char *argv[]) {
   // SSB appears at specific slots, we can use this to align our slot counter
   uint32_t samples_per_slot = slot_len;
   uint32_t slot_offset = ssb_result.t_offset / samples_per_slot;
-  
+
   logger.info("Synchronized! Starting RAR search from slot %u...", slot_offset);
   logger.info("");
 
@@ -201,10 +157,7 @@ int main(int argc, char *argv[]) {
   uint32_t slot_number = slot_offset;
 
   // Main RX loop: read samples and process
-  while (keep_running &&
-         rf_dev->receive(
-             reinterpret_cast<std::complex<float> *>(data_buffer.data()),
-             sf_len)) {
+  while (keep_running && rf_dev->receive(data_buffer.data(), sf_len)) {
 
     for (uint32_t slot_in_sf = 0; slot_in_sf < slots_per_subframe;
          slot_in_sf++) {
@@ -243,4 +196,27 @@ int main(int argc, char *argv[]) {
   }
 
   return EXIT_SUCCESS;
+}
+
+void print_config(RARSearchConfig &config, srslog::basic_logger &logger) {
+  logger.info("");
+  logger.info("Cell Config:");
+  logger.info("  Band:       %u", config.band);
+  logger.info("  PRBs:       %u", config.nof_prb);
+  logger.info("  Cell ID:    %u", config.ncellid);
+  logger.info("  DL Freq:    %.2f MHz", config.dl_freq / 1e6);
+  logger.info("  UL Freq:    %.2f MHz", config.ul_freq / 1e6);
+  logger.info("  SSB Freq:   %.2f MHz", config.ssb_freq / 1e6);
+  logger.info("  SCS:        %u kHz", 15 << config.scs_common);
+  logger.info("  Samp Rate:  %.2f MHz", config.sample_rate / 1e6);
+  logger.info("  Duplex:     %s",
+              config.duplex_mode == SRSRAN_DUPLEX_MODE_FDD ? "FDD" : "TDD");
+
+  logger.info("");
+  logger.info("PRACH Config:");
+  logger.info("  RA-RNTIs:   %zu values", config.ra_rnti_list.size());
+  for (size_t i = 0; i < config.ra_rnti_list.size(); i++) {
+    logger.info("    [%zu] %u (0x%04x)", i, config.ra_rnti_list[i],
+                config.ra_rnti_list[i]);
+  }
 }

@@ -10,6 +10,19 @@ RF::RF(const spoofer_config_t &config) {
 
   configure_device(config);
 
+  // Log the configuration being used
+  std::cout << "\n=== RF Configuration ===" << std::endl;
+  std::cout << "Device:      " << config.rf.device_name << std::endl;
+  std::cout << "Args:        " << device_args << std::endl;
+  std::cout << "Sample Rate: " << config.rf.srate / 1e6 << " MHz" << std::endl;
+  std::cout << "RX Freq:     " << config.rf.dl_frequency / 1e6 << " MHz (DL)"
+            << std::endl;
+  std::cout << "TX Freq:     " << config.rf.ul_frequency / 1e6 << " MHz (UL)"
+            << std::endl;
+  std::cout << "RX Gain:     " << config.rf.rx_gain << " dB" << std::endl;
+  std::cout << "TX Gain:     " << config.rf.tx_gain << " dB" << std::endl;
+  std::cout << "=======================" << std::endl;
+
   // Initialize the RF device
   std::string device_name = config.rf.device_name;
   // Make a non-const copy for the API
@@ -24,7 +37,7 @@ RF::RF(const spoofer_config_t &config) {
   srsran_rf_set_rx_srate(&rf_device, config.rf.srate);
   srsran_rf_set_tx_srate(&rf_device, config.rf.srate);
 
-  // Set center frequency
+  // Set center frequency (RX = DL from base station, TX = UL to base station)
   srsran_rf_set_rx_freq(&rf_device, 0, config.rf.dl_frequency);
   srsran_rf_set_tx_freq(&rf_device, 0, config.rf.ul_frequency);
 
@@ -59,14 +72,14 @@ void RF::configure_device(const spoofer_config_t &config) {
   }
 }
 
-bool RF::receive(std::complex<float> *buffer, uint32_t nsamples) {
+bool RF::receive(cf_t *buffer, uint32_t nsamples) {
   int samples_received = srsran_rf_recv(&rf_device, buffer, nsamples, true);
   return samples_received > 0;
 }
 
-bool RF::transmit(const std::complex<float> *buffer, uint32_t nsamples,
-                  bool start_of_burst, bool end_of_burst) {
-  int samples_sent = srsran_rf_send(
-      &rf_device, const_cast<std::complex<float> *>(buffer), nsamples, true);
+bool RF::transmit(const cf_t *buffer, uint32_t nsamples, bool start_of_burst,
+                  bool end_of_burst) {
+  // srsran_rf_send doesn't take const, but doesn't modify the buffer
+  int samples_sent = srsran_rf_send(&rf_device, const_cast<cf_t*>(buffer), nsamples, true);
   return samples_sent > 0;
 }

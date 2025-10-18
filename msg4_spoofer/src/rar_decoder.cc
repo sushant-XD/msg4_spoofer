@@ -103,7 +103,7 @@ RARDecoder::RARDecoder(const RARSearchConfig &config)
 
   // Calculate derived parameters
   slot_per_subframe_ = 1 << config_.scs_common;
-  uint32_t sf_len = static_cast<uint32_t>(config_.sample_rate / 1000.0);
+  uint32_t sf_len = SRSRAN_SF_LEN_PRB(config.nof_prb);
   slot_len_ = sf_len / slot_per_subframe_;
 
   logger_.info("RAR Decoder initialized");

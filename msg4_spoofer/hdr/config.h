@@ -92,7 +92,7 @@ static spoofer_config_t load(std::string config_path) {
   spoofer_config_t conf;
 
   // RF Configuration
-  conf.rf.freq_offset = toml["rf"]["freq_offset"].value_or(0);
+  conf.rf.freq_offset = 0; // Note: freq_offset is for PRACH, not RF device
   conf.rf.rx_gain = toml["rf"]["rx_gain"].value_or(50.0);
   conf.rf.tx_gain = toml["rf"]["tx_gain"].value_or(50.0);
   conf.rf.srate = toml["rf"]["srate"].value_or(23.04e6);
@@ -103,6 +103,22 @@ static spoofer_config_t load(std::string config_path) {
   conf.rf.nof_prb = toml["rf"]["nof_prb"].value_or(106);
   conf.rf.N_id = toml["rf"]["cell_id"].value_or(1);
   conf.rf.band = toml["rf"]["band"].value_or(3);
+
+  // Debug: Print loaded RF configuration
+  printf("\n=== Loaded RF Config from TOML ===\n");
+  printf("Device:       %s\n", conf.rf.device_name.c_str());
+  printf("Device Args:  %s\n", conf.rf.device_args.c_str());
+  printf("File Path:    %s\n", conf.rf.file_path.c_str());
+  printf("DL Frequency: %.2f MHz\n", conf.rf.dl_frequency / 1e6);
+  printf("UL Frequency: %.2f MHz\n", conf.rf.ul_frequency / 1e6);
+  printf("SSB Frequency:%.2f MHz\n", conf.rf.ssb_frequency / 1e6);
+  printf("Sample Rate:  %.2f MHz\n", conf.rf.srate / 1e6);
+  printf("RX Gain:      %.1f dB\n", conf.rf.rx_gain);
+  printf("TX Gain:      %.1f dB\n", conf.rf.tx_gain);
+  printf("Num PRBs:     %u\n", conf.rf.nof_prb);
+  printf("Cell ID:      %u\n", conf.rf.N_id);
+  printf("Band:         %u\n", conf.rf.band);
+  printf("==================================\n\n");
 
   conf.rf.device_name = toml["rf"]["device_name"].value_or("uhd");
   conf.rf.device_args = toml["rf"]["device_args"].value_or("type=b200");
@@ -152,6 +168,8 @@ static spoofer_config_t load(std::string config_path) {
       PRACH_ZERO_CORR_ZONE_DEFUALT);
   conf.prach.num_ra_preambles = toml["prach"]["num_ra_preambles"].value_or(
       PRACH_NUM_RA_PREAMBLES_DEFAULT);
+  conf.prach.freq_offset = toml["prach"]["freq_offset"].value_or(
+      PRACH_FREQ_OFFSET_DEFAULT);
   conf.prach.time_delay = toml["prach"]["time_delay"].value_or(1);
 
   // RAR Configuration

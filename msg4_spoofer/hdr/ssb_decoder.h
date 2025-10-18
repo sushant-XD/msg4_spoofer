@@ -11,6 +11,7 @@
 #ifndef SSB_DECODER_H
 #define SSB_DECODER_H
 
+#include "msg2_decoder_standalone.h"
 #include "srsran/srsran.h"
 #include <complex>
 #include <memory>
@@ -22,7 +23,7 @@ struct SsbSearchResult {
   bool found;
   uint32_t pci;
   uint32_t ssb_idx;
-  uint32_t t_offset;     // Time offset in samples where SSB was found
+  uint32_t t_offset; // Time offset in samples where SSB was found
   float snr_db;
   float rsrp_dbm;
   srsran_mib_nr_t mib;
@@ -33,19 +34,18 @@ struct SIB1Result;
 
 class SSBDecoder {
 public:
-  SSBDecoder(double srate_hz, uint32_t nof_prb, uint32_t pci, double freq_hz);
+  SSBDecoder();
   ~SSBDecoder();
 
   /**
    * Initialize the extractor
    */
-  bool init();
+  bool init(RARSearchConfig &config);
 
   /**
    * Configure SSB parameters
    */
-  bool configure_ssb(const std::string &pattern, uint32_t scs_khz,
-                     double ssb_freq_offset_hz = 0.0);
+  bool configure_ssb(RARSearchConfig &config);
 
   /**
    * Scan for SSB and decode MIB
@@ -54,8 +54,8 @@ public:
    * @param target_pci Optional target PCI (if nullopt, scan all PCIs)
    * @return SSB search result with MIB information
    */
-  SsbSearchResult scan_ssb(const std::complex<float> *buffer, uint32_t nsamples,
-                           std::optional<uint32_t> target_pci = std::nullopt);
+  SsbSearchResult scan_ssb(cf_t *cf_buffer, uint32_t nsamples,
+                           uint32_t target_pci);
 
   /**
    * Process slot for SIB1 decoding

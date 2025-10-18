@@ -4,17 +4,14 @@
 
 #include "ssb_decoder.h"
 #include "logging.h"
-//#include "sib1_decoder.h"  // Not needed for synchronization only
+// #include "sib1_decoder.h"  // Not needed for synchronization only
 #include <algorithm>
 #include <cstring>
 #include <iomanip>
 #include <iostream>
 
-SSBDecoder::SSBDecoder(double srate_hz, uint32_t nof_prb, uint32_t pci,
-                       double freq_hz)
-    : ssb_initialized_(false), sib1_decoder_initialized_(false),
-      srate_hz_(srate_hz), center_freq_hz_(freq_hz), nof_prb_(nof_prb),
-      pci_(pci) {
+SSBDecoder::SSBDecoder()
+    : ssb_initialized_(false), sib1_decoder_initialized_(false) {
   std::memset(&ssb_, 0, sizeof(srsran_ssb_t));
   std::memset(&ssb_result_, 0, sizeof(SsbSearchResult));
 }
@@ -26,19 +23,18 @@ SSBDecoder::~SSBDecoder() {
   }
 }
 
-bool SSBDecoder::init() {
+bool SSBDecoder::init(RARSearchConfig &config) {
   // Initialize SSB
   srsran_ssb_args_t args = {};
-  args.max_srate_hz = srate_hz_;
-  args.min_scs = srsran_subcarrier_spacing_15kHz;
+  args.max_srate_hz = config.sample_rate;
+  args.min_scs = srsran_subcarrier_spacing_15kHz;  // Use 15kHz as minimum
   args.enable_search = true;
   args.enable_measure = true;
   args.enable_encode = false;
   args.enable_decode = true;
   args.disable_polar_simd = false;
-  args.pbch_dmrs_thr = 0.0f;
-
-  LOG_INFO("Initializing SSB processor (srate=%.2f MHz)...", srate_hz_ / 1e6);
+  // Use default threshold for better detection
+  args.pbch_dmrs_thr = 0.0f;  // Use default threshold
 
   if (srsran_ssb_init(&ssb_, &args) != SRSRAN_SUCCESS) {
     LOG_ERROR("Failed to initialize SSB");
@@ -46,34 +42,33 @@ bool SSBDecoder::init() {
   }
 
   ssb_initialized_ = true;
-  return true;
+  return configure_ssb(config);
 }
 
-bool SSBDecoder::configure_ssb(const std::string &pattern, uint32_t scs_khz,
-                               double ssb_freq_offset_hz) {
+bool SSBDecoder::configure_ssb(RARSearchConfig &config) {
   if (!ssb_initialized_) {
     LOG_ERROR("SSB not initialized");
     return false;
   }
 
-  double ssb_freq_hz = center_freq_hz_ + ssb_freq_offset_hz;
-
   srsran_ssb_cfg_t ssb_cfg = {};
-  ssb_cfg.srate_hz = srate_hz_;
-  ssb_cfg.center_freq_hz = center_freq_hz_;
-  ssb_cfg.ssb_freq_hz = ssb_freq_hz;
-  ssb_cfg.scs = scs_from_khz(scs_khz);
-  ssb_cfg.pattern = pattern_from_string(pattern);
-  ssb_cfg.duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
-  ssb_cfg.periodicity_ms = 20;
-  ssb_cfg.beta_pss = 0.0f;
-  ssb_cfg.beta_sss = 0.0f;
-  ssb_cfg.beta_pbch = 0.0f;
-  ssb_cfg.beta_pbch_dmrs = 0.0f;
+  ssb_cfg.srate_hz = config.sample_rate;
+  ssb_cfg.center_freq_hz = config.dl_freq;
+  ssb_cfg.ssb_freq_hz = config.ssb_freq;
+  ssb_cfg.scs = config.scs_ssb;
+  ssb_cfg.pattern = config.ssb_pattern;
+  ssb_cfg.duplex_mode = config.duplex_mode;
+  ssb_cfg.periodicity_ms = config.ssb_period_ms;
+  ssb_cfg.beta_pss = 1.0f;
+  ssb_cfg.beta_sss = 1.0f;
+  ssb_cfg.beta_pbch = 1.0f;
+  ssb_cfg.beta_pbch_dmrs = 1.0f;
   ssb_cfg.scaling = 0.0f;
 
-  LOG_INFO("Configuring SSB: pattern=%s, scs=%u kHz, freq=%.2f MHz",
-           pattern.c_str(), scs_khz, ssb_freq_hz / 1e6);
+  LOG_INFO("Configuring SSB: pattern=%s, scs=%u kHz, freq=%.2f MHz, center_freq=%.2f MHz",
+           (ssb_cfg.pattern == SRSRAN_SSB_PATTERN_A) ? "A" : "Other",
+           (ssb_cfg.scs == srsran_subcarrier_spacing_15kHz) ? 15 : 30,
+           ssb_cfg.ssb_freq_hz / 1e6, ssb_cfg.center_freq_hz / 1e6);
 
   if (srsran_ssb_set_cfg(&ssb_, &ssb_cfg) != SRSRAN_SUCCESS) {
     LOG_ERROR("Failed to configure SSB");
@@ -83,9 +78,8 @@ bool SSBDecoder::configure_ssb(const std::string &pattern, uint32_t scs_khz,
   return true;
 }
 
-SsbSearchResult SSBDecoder::scan_ssb(const std::complex<float> *buffer,
-                                     uint32_t nsamples,
-                                     std::optional<uint32_t> target_pci) {
+SsbSearchResult SSBDecoder::scan_ssb(cf_t *cf_buffer, uint32_t nsamples,
+                                     uint32_t target_pci) {
   SsbSearchResult result = {};
   result.found = false;
 
@@ -96,20 +90,54 @@ SsbSearchResult SSBDecoder::scan_ssb(const std::complex<float> *buffer,
 
   // Perform SSB search
   srsran_ssb_search_res_t search_res = {};
-  const cf_t *cf_buffer = reinterpret_cast<const cf_t *>(buffer);
 
+  // First perform CSI search to find the PCI
+  srsran_csi_trs_measurements_t meas = {};
+  uint32_t N_id = 0;
+  if (srsran_ssb_csi_search(&ssb_, cf_buffer, nsamples, &N_id, &meas) <
+      SRSRAN_SUCCESS) {
+    // CSI search failed, but continue with regular search
+    LOG_DEBUG("SSB CSI search failed, continuing with regular search");
+  }
+
+  // Perform the actual SSB search
   if (srsran_ssb_search(&ssb_, cf_buffer, nsamples, &search_res) !=
       SRSRAN_SUCCESS) {
+    LOG_ERROR("SSB search function failed");
     return result;
   }
 
-  // Check if PBCH was successfully decoded
+  char str[512] = {};
+  srsran_pbch_msg_info(&search_res.pbch_msg, str, sizeof(str));
+  LOG_DEBUG("SSB search result: PCI=%u, t_offset=%u, crc=%s, %s", 
+            search_res.N_id, search_res.t_offset, 
+            search_res.pbch_msg.crc ? "OK" : "FAIL", str);
+  
+  // Check if PBCH was successfully decoded (CRC must pass)
   if (!search_res.pbch_msg.crc) {
+    LOG_DEBUG("SSB search completed but PBCH CRC failed - no valid SSB found");
+    return result;
+  }
+
+  // Validate measurement quality to avoid false positives
+  // RSRP should be reasonable (typically > -120 dBm for valid signal)
+  // SNR should be positive for reliable decoding
+  if (search_res.measurements.rsrp_dB < -120.0f) {
+    LOG_WARN("SSB RSRP too low (%.1f dBm) - likely noise, rejecting",
+             search_res.measurements.rsrp_dB);
+    return result;
+  }
+
+  if (search_res.measurements.snr_dB < -5.0f) {
+    LOG_WARN("SSB SNR too low (%.1f dB) - likely noise, rejecting",
+             search_res.measurements.snr_dB);
     return result;
   }
 
   // If target PCI specified, check if it matches
-  if (target_pci.has_value() && search_res.N_id != target_pci.value()) {
+  if (search_res.N_id != target_pci) {
+    LOG_INFO("SSB found but PCI mismatch: found=%u, expected=%u",
+             search_res.N_id, target_pci);
     return result;
   }
 
@@ -117,7 +145,13 @@ SsbSearchResult SSBDecoder::scan_ssb(const std::complex<float> *buffer,
   srsran_mib_nr_t mib = {};
   if (srsran_pbch_msg_nr_mib_unpack(&search_res.pbch_msg, &mib) !=
       SRSRAN_SUCCESS) {
-    LOG_ERROR("Failed to unpack MIB");
+    LOG_ERROR("Failed to unpack MIB from PBCH message");
+    return result;
+  }
+
+  // Validate MIB contents - SFN should be in valid range (0-1023)
+  if (mib.sfn > 1023) {
+    LOG_WARN("Invalid MIB: SFN=%u out of range (0-1023), rejecting", mib.sfn);
     return result;
   }
 
@@ -125,15 +159,17 @@ SsbSearchResult SSBDecoder::scan_ssb(const std::complex<float> *buffer,
   result.found = true;
   result.pci = search_res.N_id;
   result.ssb_idx = search_res.pbch_msg.ssb_idx;
-  result.t_offset = search_res.t_offset;  // Store timing offset for synchronization
+  result.t_offset =
+      search_res.t_offset; // Store timing offset for synchronization
   result.snr_db = search_res.measurements.snr_dB;
   result.rsrp_dbm = search_res.measurements.rsrp_dB;
   result.mib = mib; // Copy the decoded MIB
 
   ssb_result_ = result;
 
-  LOG_INFO("SSB found: PCI=%u, SSB_idx=%u, SNR=%.1f dB, RSRP=%.1f dBm",
-           result.pci, result.ssb_idx, result.snr_db, result.rsrp_dbm);
+  LOG_INFO("SSB successfully decoded: PCI=%u, SSB_idx=%u, SNR=%.1f dB, "
+           "RSRP=%.1f dBm, SFN=%u",
+           result.pci, result.ssb_idx, result.snr_db, result.rsrp_dbm, mib.sfn);
 
   return result;
 }

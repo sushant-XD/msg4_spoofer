@@ -8,7 +8,7 @@ level = "info"  # Options: error, warning, info, debug
 # RF Device Configuration
 device_name = "file"              # Options: "uhd", "zmq", "file"
 device_args = "type=b200"        # Device-specific arguments
-file_path = "/home/sushant/Wireless/msg4_spoofer/uhd_iq_data.fc32"                   # Path to IQ file (only for device_name = "file")
+file_path = "/home/sushant/Wireless/uhd_iq_data.fc32"                   # Path to IQ file (only for device_name = "file")
 
 # RF Parameters
 rx_gain = 50.0                   # Receiver gain in dB
@@ -51,8 +51,6 @@ num_ra_preambles = 64            # Number of RA preambles
 [rar]
 # Random Access Response Configuration
 # Note: ra_rnti_list is now calculated automatically from PRACH config
-# The following line is kept for reference but will be ignored:
-# ra_rnti_list = [1, 2, 3, 4]   # (Auto-calculated from prach.config_idx)
 coreset0_idx = 0                 # CORESET0 index from MIB (0-15)
 ss0_idx = 0                      # Search Space 0 index from MIB (0-15)
 offset_to_carrier = 0            # Offset to carrier in PRBs
