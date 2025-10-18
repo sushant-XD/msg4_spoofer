@@ -7,6 +7,7 @@
 #include "srsran/srslog/srslog.h"
 #include "ssb_decoder.h"
 #include <csignal>
+#include <cstring>
 #include <iostream>
 
 static volatile bool keep_running = true;
@@ -122,22 +123,63 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  // Use multiple 1ms samples for SSB detection
-  // SSBs appear at specific intervals, so we need to scan multiple subframes
+  // Single-pass SSB detection with sliding window approach
   uint32_t ssb_sample_len = sf_len;  // 1ms worth of samples
-  uint32_t ssb_buffer_len = ssb_sample_len * 20;  // 20ms buffer for SSB detection
-  cf_t *buffer = srsran_vec_cf_malloc(ssb_buffer_len);
+  uint32_t window_size = ssb_sample_len * 20;  // 20ms window
+  uint32_t step_size = ssb_sample_len;  // 1ms step
+  uint32_t overlap_len = ssb_sample_len;  // 1ms overlap
+  
+  cf_t *window_buffer = srsran_vec_cf_malloc(window_size + overlap_len);  // 21ms total
   SsbSearchResult ssb_result;
+  bool ssb_found = false;
   
-  logger.info("Using %u samples (20ms) for SSB detection", ssb_buffer_len);
+  logger.info("Single-pass SSB detection with sliding window:");
+  logger.info("  Window size: %u samples (20ms)", window_size);
+  logger.info("  Step size: %u samples (1ms)", step_size);
+  logger.info("  Overlap: %u samples (1ms)", overlap_len);
+  logger.info("  Total buffer: %u samples (21ms)", window_size + overlap_len);
   
-  // Read 20ms of data for SSB detection
-  if (!rf_dev->receive(buffer, ssb_buffer_len)) {
-    logger.error("Failed to receive samples for SSB search");
+  // Initialize with first 20ms of data
+  if (!rf_dev->receive(window_buffer, window_size)) {
+    logger.error("Failed to receive initial data for SSB search");
     return EXIT_FAILURE;
   }
-
-  ssb_result = ssb_decoder.scan_ssb(buffer, ssb_buffer_len, config.ncellid);
+  
+  // Single-pass sliding window search
+  uint32_t total_samples_processed = window_size;
+  uint32_t step_count = 0;
+  
+  while (!ssb_found) {
+    // Search in current window (with overlap from previous step)
+    logger.info("Step %u: Searching in window [%u-%u] samples", 
+                step_count, total_samples_processed - window_size, total_samples_processed);
+    
+    ssb_result = ssb_decoder.scan_ssb(window_buffer, window_size + overlap_len, config.ncellid);
+    
+    if (ssb_result.found) {
+      logger.info("SSB found at step %u!", step_count);
+      ssb_found = true;
+      break;
+    }
+    
+    // Shift window: move overlap to beginning
+    memcpy(window_buffer, window_buffer + window_size, overlap_len * sizeof(cf_t));
+    
+    // Read next 1ms of data
+    if (!rf_dev->receive(window_buffer + overlap_len, step_size)) {
+      logger.error("End of file reached without finding SSB");
+      return EXIT_FAILURE;
+    }
+    
+    total_samples_processed += step_size;
+    step_count++;
+    
+    // Safety check to prevent infinite loop
+    if (step_count > 1000) {
+      logger.error("SSB search timeout - no SSB found in 1000 steps");
+      return EXIT_FAILURE;
+    }
+  }
   logger.info("SSB FOUND!");
   logger.info("  PCI:       %u", ssb_result.pci);
   logger.info("  SSB Index: %u", ssb_result.ssb_idx);
