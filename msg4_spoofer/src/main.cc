@@ -122,20 +122,22 @@ int main(int argc, char *argv[]) {
     return EXIT_FAILURE;
   }
 
-  cf_t *buffer = srsran_vec_cf_malloc(sf_len);
+  // Use multiple 1ms samples for SSB detection
+  // SSBs appear at specific intervals, so we need to scan multiple subframes
+  uint32_t ssb_sample_len = sf_len;  // 1ms worth of samples
+  uint32_t ssb_buffer_len = ssb_sample_len * 20;  // 20ms buffer for SSB detection
+  cf_t *buffer = srsran_vec_cf_malloc(ssb_buffer_len);
   SsbSearchResult ssb_result;
-  while (true) {
-    if (!rf_dev->receive(buffer, sf_len)) {
-      logger.error("Failed to receive samples for SSB search");
-      return EXIT_FAILURE;
-    }
-
-    ssb_result = ssb_decoder.scan_ssb(buffer, sf_len, config.ncellid);
-
-    if (ssb_result.found) {
-      break;
-    }
+  
+  logger.info("Using %u samples (20ms) for SSB detection", ssb_buffer_len);
+  
+  // Read 20ms of data for SSB detection
+  if (!rf_dev->receive(buffer, ssb_buffer_len)) {
+    logger.error("Failed to receive samples for SSB search");
+    return EXIT_FAILURE;
   }
+
+  ssb_result = ssb_decoder.scan_ssb(buffer, ssb_buffer_len, config.ncellid);
   logger.info("SSB FOUND!");
   logger.info("  PCI:       %u", ssb_result.pci);
   logger.info("  SSB Index: %u", ssb_result.ssb_idx);

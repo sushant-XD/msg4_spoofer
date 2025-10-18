@@ -32,7 +32,7 @@ bool SSBDecoder::init(RARSearchConfig &config) {
   args.enable_measure = true;
   args.enable_encode = false;
   args.enable_decode = true;
-  args.disable_polar_simd = false;
+  args.disable_polar_simd = false;                                                                                                                                                                                                                                                                                                                                                                            
   // Use default threshold for better detection
   args.pbch_dmrs_thr = 0.0f;  // Use default threshold
 
@@ -88,6 +88,8 @@ SsbSearchResult SSBDecoder::scan_ssb(cf_t *cf_buffer, uint32_t nsamples,
     return result;
   }
 
+  LOG_DEBUG("SSB scan: nsamples=%u, target_pci=%u", nsamples, target_pci);
+
   // Perform SSB search
   srsran_ssb_search_res_t search_res = {};
 
@@ -101,11 +103,13 @@ SsbSearchResult SSBDecoder::scan_ssb(cf_t *cf_buffer, uint32_t nsamples,
   }
 
   // Perform the actual SSB search
+  LOG_DEBUG("Calling srsran_ssb_search with %u samples", nsamples);
   if (srsran_ssb_search(&ssb_, cf_buffer, nsamples, &search_res) !=
       SRSRAN_SUCCESS) {
     LOG_ERROR("SSB search function failed");
     return result;
   }
+  LOG_DEBUG("SSB search completed");
 
   char str[512] = {};
   srsran_pbch_msg_info(&search_res.pbch_msg, str, sizeof(str));
@@ -118,6 +122,10 @@ SsbSearchResult SSBDecoder::scan_ssb(cf_t *cf_buffer, uint32_t nsamples,
     LOG_DEBUG("SSB search completed but PBCH CRC failed - no valid SSB found");
     return result;
   }
+  
+  LOG_INFO("SSB search found potential SSB: PCI=%u, t_offset=%u, crc=%s", 
+           search_res.N_id, search_res.t_offset, 
+           search_res.pbch_msg.crc ? "OK" : "FAIL");
 
   // Validate measurement quality to avoid false positives
   // RSRP should be reasonable (typically > -120 dBm for valid signal)
