@@ -30,6 +30,12 @@ struct RARSearchConfig {
   uint32_t ssb_period_ms = 10;
   uint32_t ssb_period = 10;
   uint32_t offset_to_carrier = 0;
+  
+  // SSB Detection Parameters
+  uint32_t ssb_window_size_ms = 20;
+  uint32_t ssb_step_size_ms = 1;
+  uint32_t ssb_overlap_ms = 1;
+  uint32_t ssb_max_search_steps = 1000;
 
   // RA-RNTI list (auto-calculated from PRACH config)
   std::vector<uint16_t> ra_rnti_list = {1, 2, 3, 4};

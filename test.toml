@@ -32,6 +32,12 @@ pattern = "A"                    # SSB pattern: "A" for FDD, "B" or "C" for TDD
 duplex_mode = "FDD"              # Duplex mode: "FDD" or "TDD"
 period_ms = 10                   # SSB periodicity in milliseconds
 
+# SSB Detection Parameters
+window_size_ms = 20              # Detection window size in milliseconds
+step_size_ms = 1                 # Step size for sliding window in milliseconds
+overlap_ms = 1                   # Overlap between windows in milliseconds
+max_search_steps = 1000          # Maximum number of search steps
+
 [prach]
 # Physical Random Access Channel Configuration
 config_idx = 1                   # PRACH configuration index (0-255)

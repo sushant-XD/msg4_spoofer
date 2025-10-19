@@ -51,6 +51,12 @@ typedef struct ssb_config_s {
   srsran_duplex_mode_t duplex_mode = SRSRAN_DUPLEX_MODE_FDD;
   double scan_duration;
   uint32_t period_ms;
+  
+  // SSB Detection Parameters
+  uint32_t window_size_ms = 20;
+  uint32_t step_size_ms = 1;
+  uint32_t overlap_ms = 1;
+  uint32_t max_search_steps = 1000;
 } ssb_config_t;
 
 /* struct available in prach.h*/
@@ -156,6 +162,12 @@ static spoofer_config_t load(std::string config_path) {
 
   conf.ssb.scan_duration = toml["ssb"]["scan_duration"].value_or(1000.0);
   conf.ssb.period_ms = toml["ssb"]["period_ms"].value_or(10);
+  
+  // SSB Detection Parameters
+  conf.ssb.window_size_ms = toml["ssb"]["window_size_ms"].value_or(20);
+  conf.ssb.step_size_ms = toml["ssb"]["step_size_ms"].value_or(1);
+  conf.ssb.overlap_ms = toml["ssb"]["overlap_ms"].value_or(1);
+  conf.ssb.max_search_steps = toml["ssb"]["max_search_steps"].value_or(1000);
 
   // PRACH Configuration
   conf.prach.config_idx =
