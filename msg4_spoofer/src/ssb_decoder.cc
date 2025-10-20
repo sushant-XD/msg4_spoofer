@@ -10,7 +10,7 @@
 #include <iomanip>
 #include <iostream>
 
-SSBDecoder::SSBDecoder(std::unique_ptr<RFBase> *rf_dev)
+SSBDecoder::SSBDecoder(std::unique_ptr<RFBase> &rf_dev)
     : ssb_initialized_(false), sib1_decoder_initialized_(false),
       rf_dev(rf_dev) {
   std::memset(&ssb_, 0, sizeof(srsran_ssb_t));
@@ -106,8 +106,8 @@ bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
     }
   }
   uint32_t offset = 0;
-  uint32_t to_receive = sf_len;
-  int32_t limit = 2.4e-6 * srate; // 500 samples
+  uint32_t to_receive = sf_len_;
+  int32_t limit = 2.4e-6 * srate_hz_; // 500 samples
   if (samples_delayed > limit) {
     /* If there's still a lot of samples belong to last subframe not processed,
       we receive the remaining samples and make it complete */
@@ -116,7 +116,7 @@ bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
     buffer, we re-do some decoding on the same sf we already processed before */
     std::shared_ptr<samples_t> history = history_samples_queue.back();
     /* Remaining correctly aligned samples in the last slot */
-    uint32_t remaining = sf_len - samples_delayed;
+    uint32_t remaining = sf_len_ - samples_delayed;
     /* read from history queue and fill current subframe with last subframe data
      */
     for (uint32_t i = 0; i < num_channels; i++) {
@@ -129,11 +129,11 @@ bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
   } else if (samples_delayed > 0) {
     /* If the offset is too small, just ignore */
     srsran_timestamp_t ts;
-    rf_dev->recv(buffer, samples_delayed, &ts);
+    rf_dev.receive(buffer, samples_delayed, &ts);
   } else {
     /* if part of new frame is already occupied in last frame */
     offset = (uint32_t)(-samples_delayed);
-    to_receive = (sf_len + samples_delayed);
+    to_receive = (sf_len_ + samples_delayed);
     if (offset > limit) {
       std::shared_ptr<samples_t> history = history_samples_queue.back();
       for (uint32_t i = 0; i < num_channels; i++) {
@@ -154,7 +154,7 @@ bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
     tmp[i] = buffer[i] + offset;
   }
   /* receive the remaining samples of the subframe */
-  if (rf_dev->recv(tmp, to_receive, &ts) == -1) {
+  if (rf_dev.receive(tmp, to_receive, &ts) == -1) {
     LOG_ERROR("Error rf_dev->receive");
     return false;
   }
@@ -168,7 +168,7 @@ bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
   }
 
   for (uint32_t i = 0; i < num_channels; i++) {
-    srsran_vec_apply_cfo(buffer[i] + offset, -cfo_hz / srate,
+    srsran_vec_apply_cfo(buffer[i] + offset, -cfo_hz / srate_hz_,
                          samples->dl_buffer[i]->data() + offset, to_receive);
   }
 
@@ -185,25 +185,24 @@ bool SSBDecoder::run_cell_search() {
   while (!cell_found.load()) {
     /* Initialize the buffer */
     std::shared_ptr<samples_t> samples = std::make_shared<samples_t>();
-    for (int i = 0; i < config.nof_channels; i++) {
+    for (int i = 0; i < 1; i++) {
       samples->dl_buffer[i] = buffer_pool->get_buffer();
     }
     /* receive the samples */
     if (!listen(samples)) {
       LOG_ERROR("Error receive samples for cell search");
-      error_handler();
       return false;
     }
 
     /* run ssb search on new subframe received */
-    if (srsran_ssb_search(&ssb, samples->dl_buffer[0]->data(), sf_len,
+    if (srsran_ssb_search(&ssb, samples->dl_buffer[0]->data(), sf_len_,
                           &cs_result) < SRSRAN_SUCCESS) {
       LOG_ERROR("Error srsran_ssb_search");
       continue;
     }
     /* if snr too low or crc error, skip the current subframe */
     if (cs_result.measurements.snr_dB < -10.0f || !cs_result.pbch_msg.crc) {
-      samples_delayed = -0.01 * sf_len;
+      samples_delayed = -0.01 * sf_len_;
       LOG_ERROR("SNR too small or crc error");
       continue;
     }
@@ -214,11 +213,8 @@ bool SSBDecoder::run_cell_search() {
     }
     /* update the offset and the cfo */
     handle_measurements(cs_result.measurements);
-    /* log out the cell information */
-    std::array<char, 512> mib_info_str = {};
-    srsran_pbch_msg_nr_mib_info(&mib, mib_info_str.data(),
-                                (uint32_t)mib_info_str.size());
-    ncellid = cs_result.N_id;
+    pci_ = cs_result.N_id;
+    cell_found.store(true);
     return true;
   }
   return false;
@@ -246,13 +242,11 @@ bool SSBDecoder::handle_pbch(srsran_pbch_msg_nr_t &pbch_msg_) {
 void SSBDecoder::handle_measurements(srsran_csi_trs_measurements_t &feedback) {
   srsran_vec_zero((void *)&measurements, sizeof(srsran_csi_trs_measurements_t));
   srsran_combine_csi_trs_measurements(&measurements, &feedback, &measurements);
-  samples_delayed = (uint32_t)round((double)feedback.delay_us * (srate * 1e-6));
+  samples_delayed =
+      (uint32_t)round((double)feedback.delay_us * (srate_hz_ * 1e-6));
   cfo_hz = feedback.cfo_hz;
   measurements = feedback;
   // LOG_ERROR("CFO: %f SNR: %f", feedback.cfo_hz, feedback.snr_dB);
-  tracer_status.send_string(
-      fmt::format("{{\"CFO\": {:.2f}, \"SNR\": {:.2f}, \"RSRP\": {:.2f}}}",
-                  feedback.cfo_hz, feedback.snr_dB, feedback.rsrp_dB));
 }
 
 void SSBDecoder::print_mib(const srsran_mib_nr_t &mib) {

@@ -9,7 +9,9 @@
  */
 #pragma once
 
+#include "buffer_pool.h"
 #include "msg2_decoder_standalone.h"
+#include "rf_base.h"
 #include "srsran/phy/phch/pbch_msg_nr.h"
 #include "srsran/phy/sync/ssb.h"
 #include "srsran/srsran.h"
@@ -41,11 +43,12 @@ struct SsbSearchResult {
 
 class SSBDecoder {
 public:
-  SSBDecoder(std::unique_ptr<RFBase> *rf_dev);
+  SSBDecoder(std::unique_ptr<RFBase> &rf_dev);
   ~SSBDecoder();
 
   bool init(RARSearchConfig &config);
 
+  bool run_cell_search();
   bool configure_ssb(RARSearchConfig &config);
 
   void set_mib_info(uint8_t coreset0_idx, uint8_t ss0_idx);
@@ -57,6 +60,11 @@ public:
   bool listen(std::shared_ptr<samples_t> &samples);
 
   void run_tti();
+
+  bool handle_pbch(srsran_pbch_msg_nr_t &pbch_msg_);
+  void handle_measurements(srsran_csi_trs_measurements_t &feedback);
+
+  void get_tti(uint32_t *idx, srsran_timestamp_t *ts);
 
 private:
   // SSB-related members
@@ -71,14 +79,13 @@ private:
   uint32_t slot_per_sf;
   uint32_t num_channels = 1;
 
+  float cfo_hz = 0;
   // used for sync
   int32_t samples_delayed = 0;
-  srsran_csi_trs_measurements_t measurements = {};
 
   std::atomic<uint32_t> tti{0};
   srsran_timestamp_t timestamp_new{};
   srsran_timestamp_t timestamp_prev{};
-  syncer_args_t args = {};
   srsran_ssb_t ssb = {};
   srsran_mib_nr_t mib = {};
   srsran_pbch_msg_nr_t pbch_msg = {};

@@ -119,9 +119,9 @@ int main(int argc, char *argv[]) {
 
   // === SSB SYNCHRONIZATION ===
   logger.info("Searching for SSB to synchronize...");
-  SSBDecoder ssb_decoder;
+  SSBDecoder ssb_decoder(rf_dev);
 
-  if (!ssb_decoder.init(config, rf_dev)) {
+  if (!ssb_decoder.init(config)) {
     logger.error("Failed to initialize SSB decoder");
     return EXIT_FAILURE;
   }
@@ -135,21 +135,23 @@ int main(int argc, char *argv[]) {
 
   // Initialize with first window of data
   int ssb_attempts = 0;
-  while (!ssb_found && (rf_dev->receive(window_buffer, ssb_sample_len))) {
-    // Search in current window (with overlap from previous step)
-    // Scan for SSB
-    LOG_INFO("Attempting to decode slot: %d", ssb_attempts);
-    ssb_result =
-        ssb_decoder.scan_ssb(window_buffer, ssb_sample_len, conf.rf.N_id);
 
-    if (ssb_result.found) {
-      ssb_found = true;
-      LOG_INFO("SSB decoded");
-      ssb_decoder.print_mib(ssb_result.mib);
-      break;
-    }
-    ssb_attempts++;
-  }
+  ssb_decoder.run_cell_search();
+  // while (!ssb_found && (rf_dev->receive(window_buffer, ssb_sample_len))) {
+  //   // Search in current window (with overlap from previous step)
+  //   // Scan for SSB
+  //   LOG_INFO("Attempting to decode slot: %d", ssb_attempts);
+  //   ssb_result =
+  //       ssb_decoder.scan_ssb(window_buffer, ssb_sample_len, conf.rf.N_id);
+  //
+  //   if (ssb_result.found) {
+  //     ssb_found = true;
+  //     LOG_INFO("SSB decoded");
+  //     ssb_decoder.print_mib(ssb_result.mib);
+  //     break;
+  //   }
+  //   ssb_attempts++;
+  // }
 
   logger.info("=== SSB Detection Results ===");
   logger.info("PCI:        %u", ssb_result.pci);
