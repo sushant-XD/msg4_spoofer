@@ -11,7 +11,7 @@ RF::RF(const spoofer_config_t &config) {
   configure_device(config);
 
   // Log the configuration being used
-  std::cout << "\n=== RF Configuration ===" << std::endl;
+  std::cout << "\n====== RF Configuration ======" << std::endl;
   std::cout << "Device:      " << config.rf.device_name << std::endl;
   std::cout << "Args:        " << device_args << std::endl;
   std::cout << "Sample Rate: " << config.rf.srate / 1e6 << " MHz" << std::endl;
@@ -80,6 +80,7 @@ bool RF::receive(cf_t *buffer, uint32_t nsamples) {
 bool RF::transmit(const cf_t *buffer, uint32_t nsamples, bool start_of_burst,
                   bool end_of_burst) {
   // srsran_rf_send doesn't take const, but doesn't modify the buffer
-  int samples_sent = srsran_rf_send(&rf_device, const_cast<cf_t*>(buffer), nsamples, true);
+  int samples_sent =
+      srsran_rf_send(&rf_device, const_cast<cf_t *>(buffer), nsamples, true);
   return samples_sent > 0;
 }

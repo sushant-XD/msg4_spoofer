@@ -44,12 +44,13 @@ bool RFFile::receive(cf_t *buffer, uint32_t nsamples) {
   size_t samples_read =
       fread(buffer, sizeof(std::complex<float>), nsamples, rx_file_handle);
 
-  // If reached end of file, stop processing (don't loop)
   if (samples_read < nsamples) {
-    // Fill remaining buffer with zeros
-    memset(buffer + samples_read, 0, (nsamples - samples_read) * sizeof(cf_t));
-    // Return false to signal end of file
-    return false;
+    fseek(rx_file_handle, 0, SEEK_SET);
+    size_t remaining = nsamples - samples_read;
+    size_t additional =
+        fread(buffer + samples_read, sizeof(std::complex<float>), remaining,
+              rx_file_handle);
+    samples_read += additional;
   }
 
   return samples_read > 0;

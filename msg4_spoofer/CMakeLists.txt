@@ -7,7 +7,6 @@ set(COMMON_SOURCES
     ${SPOOFER_SRC_DIR}/rf.cc
     ${SPOOFER_SRC_DIR}/rf_base.cc
     ${SPOOFER_SRC_DIR}/rf_file.cc
-    ${SPOOFER_SRC_DIR}/data_source.cc
     ${SPOOFER_SRC_DIR}/logging.cc
 )
 

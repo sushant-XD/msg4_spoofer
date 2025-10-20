@@ -7,90 +7,56 @@
  * 3. Uses MIB information to decode SIB1
  * 4. Extracts critical system information
  */
-
-#ifndef SSB_DECODER_H
-#define SSB_DECODER_H
+#pragma once
 
 #include "msg2_decoder_standalone.h"
+#include "srsran/phy/phch/pbch_msg_nr.h"
+#include "srsran/phy/sync/ssb.h"
 #include "srsran/srsran.h"
+#include <atomic>
 #include <complex>
 #include <memory>
 #include <optional>
+#include <queue>
 #include <vector>
 
-// SSB Search Result structure
+#define SF_DURATION 1e-3
+
+struct samples_t {
+  uint32_t slot_idx;
+  srsran_timestamp_t ts;
+  std::shared_ptr<std::vector<cf_t>> dl_buffer[SRSRAN_MAX_CHANNELS];
+  std::shared_ptr<std::vector<cf_t>> ul_buffer[SRSRAN_MAX_CHANNELS];
+};
+
 struct SsbSearchResult {
   bool found;
   uint32_t pci;
   uint32_t ssb_idx;
-  uint32_t t_offset; // Time offset in samples where SSB was found
+  uint32_t t_offset;
   float snr_db;
   float rsrp_dbm;
   srsran_mib_nr_t mib;
 };
 
-// Forward declaration - SIB1Result is defined in sib1_decoder.h
-struct SIB1Result;
-
 class SSBDecoder {
 public:
-  SSBDecoder();
+  SSBDecoder(std::unique_ptr<RFBase> *rf_dev);
   ~SSBDecoder();
 
-  /**
-   * Initialize the extractor
-   */
   bool init(RARSearchConfig &config);
 
-  /**
-   * Configure SSB parameters
-   */
   bool configure_ssb(RARSearchConfig &config);
 
-  /**
-   * Scan for SSB and decode MIB
-   * @param buffer Input samples buffer
-   * @param nsamples Number of samples
-   * @param target_pci Optional target PCI (if nullopt, scan all PCIs)
-   * @return SSB search result with MIB information
-   */
-  SsbSearchResult scan_ssb(cf_t *cf_buffer, uint32_t nsamples,
-                           uint32_t target_pci);
-
-  /**
-   * Process slot for SIB1 decoding
-   * Must be called after successful SSB scan
-   * @param buffer Input samples for one slot
-   * @param slot_idx Current slot index (0-10239)
-   * @return SIB1 result if decoded, otherwise invalid result
-   */
-  SIB1Result process_slot_for_sib1(const cf_t *buffer, uint32_t slot_idx);
-
-  /**
-   * Set MIB information for SIB1 decoding
-   * Called internally after SSB scan, but can be set manually
-   */
   void set_mib_info(uint8_t coreset0_idx, uint8_t ss0_idx);
 
-  /**
-   * Get the detected SSB result (call after successful scan)
-   */
   const SsbSearchResult &get_ssb_result() const { return ssb_result_; }
 
-  /**
-   * Check if SSB has been detected
-   */
-  bool has_ssb() const { return ssb_result_.found; }
-
-  /**
-   * Print MIB information
-   */
   void print_mib(const srsran_mib_nr_t &mib);
 
-  /**
-   * Print SIB1 information
-   */
-  void print_sib1(const SIB1Result &sib1);
+  bool listen(std::shared_ptr<samples_t> &samples);
+
+  void run_tti();
 
 private:
   // SSB-related members
@@ -100,19 +66,39 @@ private:
   double center_freq_hz_;
   uint32_t nof_prb_;
   uint32_t pci_;
+  uint32_t sf_len_;
 
-  // SIB1-related members
-  // Add your SIB1 decoder structure here
-  // srsran_ue_dl_nr_t ue_dl_; // Example
+  uint32_t slot_per_sf;
+  uint32_t num_channels = 1;
+
+  // used for sync
+  int32_t samples_delayed = 0;
+  srsran_csi_trs_measurements_t measurements = {};
+
+  std::atomic<uint32_t> tti{0};
+  srsran_timestamp_t timestamp_new{};
+  srsran_timestamp_t timestamp_prev{};
+  syncer_args_t args = {};
+  srsran_ssb_t ssb = {};
+  srsran_mib_nr_t mib = {};
+  srsran_pbch_msg_nr_t pbch_msg = {};
+  srsran_csi_trs_measurements_t measurements = {};
+
+  std::queue<std::shared_ptr<samples_t>> history_samples_queue;
   bool sib1_decoder_initialized_;
 
   // Stored results
   SsbSearchResult ssb_result_;
 
+  std::unique_ptr<SharedBufferPool> buffer_pool = nullptr;
+
+  std::mutex time_mtx;
+  std::atomic<bool> running{false};
+  std::atomic<bool> cell_found{false};
+
+  std::unique_ptr<RFBase> rf_dev;
   // Helper functions
   srsran_ssb_pattern_t pattern_from_string(const std::string &pattern);
   srsran_subcarrier_spacing_t scs_from_khz(uint32_t scs_khz);
   bool decode_mib(const srsran_pbch_msg_nr_t &pbch_msg, srsran_mib_nr_t &mib);
 };
-
-#endif // SSB_DECODER_H

@@ -10,8 +10,9 @@
 #include <iomanip>
 #include <iostream>
 
-SSBDecoder::SSBDecoder()
-    : ssb_initialized_(false), sib1_decoder_initialized_(false) {
+SSBDecoder::SSBDecoder(std::unique_ptr<RFBase> *rf_dev)
+    : ssb_initialized_(false), sib1_decoder_initialized_(false),
+      rf_dev(rf_dev) {
   std::memset(&ssb_, 0, sizeof(srsran_ssb_t));
   std::memset(&ssb_result_, 0, sizeof(SsbSearchResult));
 }
@@ -24,17 +25,17 @@ SSBDecoder::~SSBDecoder() {
 }
 
 bool SSBDecoder::init(RARSearchConfig &config) {
+
   // Initialize SSB
   srsran_ssb_args_t args = {};
   args.max_srate_hz = config.sample_rate;
-  args.min_scs = srsran_subcarrier_spacing_15kHz;  // Use 15kHz as minimum
+  args.min_scs = srsran_subcarrier_spacing_15kHz; // Use 15kHz as minimum
   args.enable_search = true;
   args.enable_measure = true;
-  args.enable_encode = false;
   args.enable_decode = true;
-  args.disable_polar_simd = false;                                                                                                                                                                                                                                                                                                                                                                            
-  // Use default threshold for better detection
-  args.pbch_dmrs_thr = 0.0f;  // Use default threshold
+
+  sf_len_ = config.sample_rate * SF_DURATION;
+  buffer_pool = std::make_unique<SharedBufferPool>(sf_len_, 10);
 
   if (srsran_ssb_init(&ssb_, &args) != SRSRAN_SUCCESS) {
     LOG_ERROR("Failed to initialize SSB");
@@ -43,6 +44,26 @@ bool SSBDecoder::init(RARSearchConfig &config) {
 
   ssb_initialized_ = true;
   return configure_ssb(config);
+}
+
+void SSBDecoder::run_tti() {
+  /* update the slot index if it is greater than 1 */
+  srsran_timestamp_t temp = {};
+  srsran_timestamp_copy(&temp, &timestamp_new);
+  srsran_timestamp_sub(&temp, timestamp_prev.full_secs,
+                       timestamp_prev.frac_secs);
+  int32_t tti_jump =
+      static_cast<int32_t>(srsran_timestamp_uint64(&temp, 1e3)) * slot_per_sf;
+  if (tti_jump != 0) {
+    srsran_timestamp_copy(&timestamp_prev, &timestamp_new);
+    tti = (tti + tti_jump) % (10240 * slot_per_sf);
+  }
+}
+
+void SSBDecoder::get_tti(uint32_t *idx, srsran_timestamp_t *ts) {
+  std::lock_guard<std::mutex> lock(time_mtx);
+  *idx = tti;
+  srsran_timestamp_copy(ts, &timestamp_new);
 }
 
 bool SSBDecoder::configure_ssb(RARSearchConfig &config) {
@@ -59,13 +80,9 @@ bool SSBDecoder::configure_ssb(RARSearchConfig &config) {
   ssb_cfg.pattern = config.ssb_pattern;
   ssb_cfg.duplex_mode = config.duplex_mode;
   ssb_cfg.periodicity_ms = config.ssb_period_ms;
-  ssb_cfg.beta_pss = 1.0f;
-  ssb_cfg.beta_sss = 1.0f;
-  ssb_cfg.beta_pbch = 1.0f;
-  ssb_cfg.beta_pbch_dmrs = 1.0f;
-  ssb_cfg.scaling = 0.0f;
 
-  LOG_INFO("Configuring SSB: pattern=%s, scs=%u kHz, freq=%.2f MHz, center_freq=%.2f MHz",
+  LOG_INFO("Configuring SSB: pattern=%s, scs=%u kHz, freq=%.2f MHz, "
+           "center_freq=%.2f MHz",
            (ssb_cfg.pattern == SRSRAN_SSB_PATTERN_A) ? "A" : "Other",
            (ssb_cfg.scs == srsran_subcarrier_spacing_15kHz) ? 15 : 30,
            ssb_cfg.ssb_freq_hz / 1e6, ssb_cfg.center_freq_hz / 1e6);
@@ -78,117 +95,164 @@ bool SSBDecoder::configure_ssb(RARSearchConfig &config) {
   return true;
 }
 
-SsbSearchResult SSBDecoder::scan_ssb(cf_t *cf_buffer, uint32_t nsamples,
-                                     uint32_t target_pci) {
-  SsbSearchResult result = {};
-  result.found = false;
-
-  if (!ssb_initialized_) {
-    LOG_ERROR("SSB not initialized");
-    return result;
+bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
+  /* receive data */
+  cf_t *buffer[SRSRAN_MAX_CHANNELS];
+  for (int i = 0; i < SRSRAN_MAX_CHANNELS; i++) {
+    if (i < num_channels) {
+      buffer[i] = samples->dl_buffer[i]->data();
+    } else {
+      buffer[i] = nullptr; // Fill the rest with nullptr if fewer channels
+    }
   }
-
-  LOG_DEBUG("SSB scan: nsamples=%u, target_pci=%u", nsamples, target_pci);
-
-  // Perform SSB search
-  srsran_ssb_search_res_t search_res = {};
-
-  // First perform CSI search to find the PCI
-  srsran_csi_trs_measurements_t meas = {};
-  uint32_t N_id = 0;
-  if (srsran_ssb_csi_search(&ssb_, cf_buffer, nsamples, &N_id, &meas) <
-      SRSRAN_SUCCESS) {
-    // CSI search failed, but continue with regular search
-    LOG_DEBUG("SSB CSI search failed, continuing with regular search");
+  uint32_t offset = 0;
+  uint32_t to_receive = sf_len;
+  int32_t limit = 2.4e-6 * srate; // 500 samples
+  if (samples_delayed > limit) {
+    /* If there's still a lot of samples belong to last subframe not processed,
+      we receive the remaining samples and make it complete */
+    /* if current frame to receive still contain last frame, and the offset is
+    larger than 500 Then copy the last sf from the correct start to current
+    buffer, we re-do some decoding on the same sf we already processed before */
+    std::shared_ptr<samples_t> history = history_samples_queue.back();
+    /* Remaining correctly aligned samples in the last slot */
+    uint32_t remaining = sf_len - samples_delayed;
+    /* read from history queue and fill current subframe with last subframe data
+     */
+    for (uint32_t i = 0; i < num_channels; i++) {
+      srsran_vec_cf_copy(buffer[i],
+                         history->dl_buffer[i]->data() + samples_delayed,
+                         remaining);
+    }
+    offset = remaining;
+    to_receive = samples_delayed;
+  } else if (samples_delayed > 0) {
+    /* If the offset is too small, just ignore */
+    srsran_timestamp_t ts;
+    rf_dev->recv(buffer, samples_delayed, &ts);
+  } else {
+    /* if part of new frame is already occupied in last frame */
+    offset = (uint32_t)(-samples_delayed);
+    to_receive = (sf_len + samples_delayed);
+    if (offset > limit) {
+      std::shared_ptr<samples_t> history = history_samples_queue.back();
+      for (uint32_t i = 0; i < num_channels; i++) {
+        srsran_vec_cf_copy(buffer[i],
+                           history->dl_buffer[i]->data() + to_receive, offset);
+      }
+    } else {
+      for (uint32_t i = 0; i < num_channels; i++) {
+        srsran_vec_cf_zero(buffer[i], offset);
+      }
+    }
   }
-
-  // Perform the actual SSB search
-  LOG_DEBUG("Calling srsran_ssb_search with %u samples", nsamples);
-  if (srsran_ssb_search(&ssb_, cf_buffer, nsamples, &search_res) !=
-      SRSRAN_SUCCESS) {
-    LOG_ERROR("SSB search function failed");
-    return result;
+  /* reset next sample offset */
+  samples_delayed = 0;
+  srsran_timestamp_t ts;
+  cf_t *tmp[SRSRAN_MAX_CHANNELS];
+  for (int i = 0; i < num_channels; i++) {
+    tmp[i] = buffer[i] + offset;
   }
-  LOG_DEBUG("SSB search completed");
-
-  char str[512] = {};
-  srsran_pbch_msg_info(&search_res.pbch_msg, str, sizeof(str));
-  LOG_DEBUG("SSB search result: PCI=%u, t_offset=%u, crc=%s, %s", 
-            search_res.N_id, search_res.t_offset, 
-            search_res.pbch_msg.crc ? "OK" : "FAIL", str);
-  
-  // Check if PBCH was successfully decoded (CRC must pass)
-  if (!search_res.pbch_msg.crc) {
-    LOG_DEBUG("SSB search completed but PBCH CRC failed - no valid SSB found");
-    return result;
-  }
-  
-  LOG_INFO("SSB search found potential SSB: PCI=%u, t_offset=%u, crc=%s", 
-           search_res.N_id, search_res.t_offset, 
-           search_res.pbch_msg.crc ? "OK" : "FAIL");
-
-  // Validate measurement quality to avoid false positives
-  // RSRP should be reasonable (typically > -120 dBm for valid signal)
-  // SNR should be positive for reliable decoding
-  if (search_res.measurements.rsrp_dB < -120.0f) {
-    LOG_WARN("SSB RSRP too low (%.1f dBm) - likely noise, rejecting",
-             search_res.measurements.rsrp_dB);
-    return result;
-  }
-
-  if (search_res.measurements.snr_dB < -5.0f) {
-    LOG_WARN("SSB SNR too low (%.1f dB) - likely noise, rejecting",
-             search_res.measurements.snr_dB);
-    return result;
-  }
-
-  // If target PCI specified, check if it matches
-  if (search_res.N_id != target_pci) {
-    LOG_INFO("SSB found but PCI mismatch: found=%u, expected=%u",
-             search_res.N_id, target_pci);
-    return result;
-  }
-
-  // Decode MIB immediately while search_res is still valid
-  srsran_mib_nr_t mib = {};
-  if (srsran_pbch_msg_nr_mib_unpack(&search_res.pbch_msg, &mib) !=
-      SRSRAN_SUCCESS) {
-    LOG_ERROR("Failed to unpack MIB from PBCH message");
-    return result;
-  }
-
-  // Validate MIB contents - SFN should be in valid range (0-1023)
-  if (mib.sfn > 1023) {
-    LOG_WARN("Invalid MIB: SFN=%u out of range (0-1023), rejecting", mib.sfn);
-    return result;
-  }
-
-  // Fill result structure with only the data we need (no pointers)
-  result.found = true;
-  result.pci = search_res.N_id;
-  result.ssb_idx = search_res.pbch_msg.ssb_idx;
-  result.t_offset =
-      search_res.t_offset; // Store timing offset for synchronization
-  result.snr_db = search_res.measurements.snr_dB;
-  result.rsrp_dbm = search_res.measurements.rsrp_dB;
-  result.mib = mib; // Copy the decoded MIB
-
-  ssb_result_ = result;
-
-  LOG_INFO("SSB successfully decoded: PCI=%u, SSB_idx=%u, SNR=%.1f dB, "
-           "RSRP=%.1f dBm, SFN=%u",
-           result.pci, result.ssb_idx, result.snr_db, result.rsrp_dbm, mib.sfn);
-
-  return result;
-}
-
-bool SSBDecoder::decode_mib(const srsran_pbch_msg_nr_t &pbch_msg,
-                            srsran_mib_nr_t &mib) {
-  if (srsran_pbch_msg_nr_mib_unpack(&pbch_msg, &mib) != SRSRAN_SUCCESS) {
-    LOG_ERROR("Failed to unpack MIB");
+  /* receive the remaining samples of the subframe */
+  if (rf_dev->recv(tmp, to_receive, &ts) == -1) {
+    LOG_ERROR("Error rf_dev->receive");
     return false;
   }
+
+  /* maintain the history queue size to 11 */
+  if (history_samples_queue.size() < 11) {
+    history_samples_queue.push(samples);
+  } else {
+    history_samples_queue.pop();
+    history_samples_queue.push(samples);
+  }
+
+  for (uint32_t i = 0; i < num_channels; i++) {
+    srsran_vec_apply_cfo(buffer[i] + offset, -cfo_hz / srate,
+                         samples->dl_buffer[i]->data() + offset, to_receive);
+  }
+
+  std::lock_guard<std::mutex> lock(time_mtx);
+  /* update the new received sample timer */
+  srsran_timestamp_copy(&timestamp_new, &ts);
+  /* update the slot index */
+  run_tti();
   return true;
+}
+
+bool SSBDecoder::run_cell_search() {
+  srsran_ssb_search_res_t cs_result = {};
+  while (!cell_found.load()) {
+    /* Initialize the buffer */
+    std::shared_ptr<samples_t> samples = std::make_shared<samples_t>();
+    for (int i = 0; i < config.nof_channels; i++) {
+      samples->dl_buffer[i] = buffer_pool->get_buffer();
+    }
+    /* receive the samples */
+    if (!listen(samples)) {
+      LOG_ERROR("Error receive samples for cell search");
+      error_handler();
+      return false;
+    }
+
+    /* run ssb search on new subframe received */
+    if (srsran_ssb_search(&ssb, samples->dl_buffer[0]->data(), sf_len,
+                          &cs_result) < SRSRAN_SUCCESS) {
+      LOG_ERROR("Error srsran_ssb_search");
+      continue;
+    }
+    /* if snr too low or crc error, skip the current subframe */
+    if (cs_result.measurements.snr_dB < -10.0f || !cs_result.pbch_msg.crc) {
+      samples_delayed = -0.01 * sf_len;
+      LOG_ERROR("SNR too small or crc error");
+      continue;
+    }
+    /* extract mib from the pbch msg */
+    if (!handle_pbch(cs_result.pbch_msg)) {
+      LOG_ERROR("Error handle_pbch");
+      continue;
+    }
+    /* update the offset and the cfo */
+    handle_measurements(cs_result.measurements);
+    /* log out the cell information */
+    std::array<char, 512> mib_info_str = {};
+    srsran_pbch_msg_nr_mib_info(&mib, mib_info_str.data(),
+                                (uint32_t)mib_info_str.size());
+    ncellid = cs_result.N_id;
+    return true;
+  }
+  return false;
+}
+
+bool SSBDecoder::handle_pbch(srsran_pbch_msg_nr_t &pbch_msg_) {
+  srsran_mib_nr_t tmp_mib = {};
+  /* unpack the mib */
+  if (srsran_pbch_msg_nr_mib_unpack(&pbch_msg_, &tmp_mib) != 0) {
+    LOG_ERROR("Error srsran_pbch_msg_nr_mib_unpack");
+    return false;
+  }
+  if (tmp_mib.cell_barred) {
+    return false;
+  } /* update the class mib record */
+  mib = tmp_mib; /* update the subframe index */
+  uint32_t sf_idx =
+      srsran_ssb_candidate_sf_idx(&ssb, pbch_msg_.ssb_idx, pbch_msg_.hrf);
+  /* Update the TTI value */
+  tti = (mib.sfn * 10 * slot_per_sf + sf_idx) % (10240 * slot_per_sf);
+  return true;
+}
+
+/* update the sample offset and cfo for receiving the samples next time. */
+void SSBDecoder::handle_measurements(srsran_csi_trs_measurements_t &feedback) {
+  srsran_vec_zero((void *)&measurements, sizeof(srsran_csi_trs_measurements_t));
+  srsran_combine_csi_trs_measurements(&measurements, &feedback, &measurements);
+  samples_delayed = (uint32_t)round((double)feedback.delay_us * (srate * 1e-6));
+  cfo_hz = feedback.cfo_hz;
+  measurements = feedback;
+  // LOG_ERROR("CFO: %f SNR: %f", feedback.cfo_hz, feedback.snr_dB);
+  tracer_status.send_string(
+      fmt::format("{{\"CFO\": {:.2f}, \"SNR\": {:.2f}, \"RSRP\": {:.2f}}}",
+                  feedback.cfo_hz, feedback.snr_dB, feedback.rsrp_dB));
 }
 
 void SSBDecoder::print_mib(const srsran_mib_nr_t &mib) {
@@ -243,29 +307,6 @@ void SSBDecoder::print_mib(const srsran_mib_nr_t &mib) {
   std::cout << "=======================" << std::endl;
 }
 
-// void SSBDecoder::print_sib1(const SIB1Result &sib1) {
-//   std::cout << "\n=== SIB1 Information ===" << std::endl;
-//   std::cout << "  SFN                    : " << sib1.sfn << std::endl;
-//   std::cout << "  Slot in Frame          : " << sib1.slot_in_frame <<
-//   std::endl; std::cout << "  Valid                  : " << (sib1.valid ?
-//   "Yes" : "No")
-//             << std::endl;
-//
-//   if (sib1.valid) {
-//     std::cout << "  PDCCH Config           : "
-//               << (sib1.pdcch_config.configured ? "Configured"
-//                                                : "Not Configured")
-//               << std::endl;
-//     std::cout << "  CORESET0 Index         : " <<
-//     sib1.pdcch_config.coreset0_idx
-//               << std::endl;
-//     std::cout << "  SearchSpace0 Index     : "
-//               << sib1.pdcch_config.searchspace0_idx << std::endl;
-//   }
-//
-//   std::cout << "=======================" << std::endl;
-// }
-
 srsran_ssb_pattern_t
 SSBDecoder::pattern_from_string(const std::string &pattern) {
   if (pattern == "A")
@@ -282,7 +323,6 @@ SSBDecoder::pattern_from_string(const std::string &pattern) {
   LOG_WARN("Unknown SSB pattern '%s', defaulting to C", pattern.c_str());
   return SRSRAN_SSB_PATTERN_C;
 }
-
 srsran_subcarrier_spacing_t SSBDecoder::scs_from_khz(uint32_t scs_khz) {
   switch (scs_khz) {
   case 15:
