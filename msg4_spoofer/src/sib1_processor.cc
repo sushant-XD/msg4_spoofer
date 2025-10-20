@@ -79,7 +79,9 @@ SIB1SearchResult SIB1Processor::search_and_decode(
     }
 
     // 1. Receive one slot worth of samples
-    if (!rf_dev->receive(sample_buffer_.data(), slot_len_)) {
+    srsran_timestamp_t ts;
+    cf_t* buffer_ptr = sample_buffer_.data();
+    if (rf_dev->recv(&buffer_ptr, slot_len_, &ts) <= 0) {
       LOG_ERROR("RF receive failed during SIB1 search at attempt %u", i);
       break;
     }

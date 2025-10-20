@@ -346,7 +346,9 @@ int main(int argc, char *argv[]) {
   uint32_t slot_number = slot_offset;
 
   // Main RX loop: read samples and process
-  while (keep_running && rf_dev->receive(data_buffer.data(), sf_len)) {
+  srsran_timestamp_t ts;
+  cf_t* buffer_ptr = data_buffer.data();
+  while (keep_running && rf_dev->recv(&buffer_ptr, sf_len, &ts) > 0) {
 
     for (uint32_t slot_in_sf = 0; slot_in_sf < slots_per_subframe;
          slot_in_sf++) {

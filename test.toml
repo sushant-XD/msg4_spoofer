@@ -11,8 +11,8 @@ device_args = "type=b200"        # Device-specific arguments
 file_path = "/home/sushant/Wireless/uhd_iq_data.fc32"                   # Path to IQ file (only for device_name = "file")
 
 # RF Parameters
-rx_gain = 50.0                   # Receiver gain in dB
-tx_gain = 50.0                   # Transmitter gain in dB (not used for RX-only)
+rx_gain = 40.0                   # Receiver gain in dB
+tx_gain = 80.0                   # Transmitter gain in dB (not used for RX-only)
 srate = 23.04e6                  # Sample rate in Hz
 
 # Frequency Configuration
@@ -33,7 +33,7 @@ duplex_mode = "FDD"              # Duplex mode: "FDD" or "TDD"
 period_ms = 10                   # SSB periodicity in milliseconds
 
 # SSB Detection Parameters
-window_size_ms = 20              # Detection window size in milliseconds
+window_size_ms = 40              # Detection window size in milliseconds
 step_size_ms = 1                 # Step size for sliding window in milliseconds
 overlap_ms = 1                   # Overlap between windows in milliseconds
 max_search_steps = 1000          # Maximum number of search steps

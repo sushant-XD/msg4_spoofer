@@ -12,7 +12,7 @@
 
 SSBDecoder::SSBDecoder(std::unique_ptr<RFBase> &rf_dev)
     : ssb_initialized_(false), sib1_decoder_initialized_(false),
-      rf_dev(rf_dev) {
+      rf_dev(std::move(rf_dev)) {
   std::memset(&ssb_, 0, sizeof(srsran_ssb_t));
   std::memset(&ssb_result_, 0, sizeof(SsbSearchResult));
 }
@@ -35,7 +35,7 @@ bool SSBDecoder::init(RARSearchConfig &config) {
   args.enable_decode = true;
 
   sf_len_ = config.sample_rate * SF_DURATION;
-  buffer_pool = std::make_unique<SharedBufferPool>(sf_len_, 10);
+  buffer_pool = std::make_unique<SharedBufferPool>(sf_len_, 24);
 
   if (srsran_ssb_init(&ssb_, &args) != SRSRAN_SUCCESS) {
     LOG_ERROR("Failed to initialize SSB");
@@ -79,13 +79,14 @@ bool SSBDecoder::configure_ssb(RARSearchConfig &config) {
   ssb_cfg.scs = config.scs_ssb;
   ssb_cfg.pattern = config.ssb_pattern;
   ssb_cfg.duplex_mode = config.duplex_mode;
-  ssb_cfg.periodicity_ms = config.ssb_period_ms;
+  ssb_cfg.periodicity_ms = 10; // generally periodicity is always 10
 
-  LOG_INFO("Configuring SSB: pattern=%s, scs=%u kHz, freq=%.2f MHz, "
-           "center_freq=%.2f MHz",
+  LOG_INFO("Configuring SSB: pattern=%s, scs=%u kHz, ssb freq=%.2f MHz, "
+           "center_freq=%.2f MHz, sample rate;%.2f MHz",
            (ssb_cfg.pattern == SRSRAN_SSB_PATTERN_A) ? "A" : "Other",
            (ssb_cfg.scs == srsran_subcarrier_spacing_15kHz) ? 15 : 30,
-           ssb_cfg.ssb_freq_hz / 1e6, ssb_cfg.center_freq_hz / 1e6);
+           ssb_cfg.ssb_freq_hz / 1e6, ssb_cfg.center_freq_hz / 1e6,
+           ssb_cfg.srate_hz / 1e6);
 
   if (srsran_ssb_set_cfg(&ssb_, &ssb_cfg) != SRSRAN_SUCCESS) {
     LOG_ERROR("Failed to configure SSB");
@@ -129,7 +130,7 @@ bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
   } else if (samples_delayed > 0) {
     /* If the offset is too small, just ignore */
     srsran_timestamp_t ts;
-    rf_dev.receive(buffer, samples_delayed, &ts);
+    rf_dev->recv(buffer, samples_delayed, &ts);
   } else {
     /* if part of new frame is already occupied in last frame */
     offset = (uint32_t)(-samples_delayed);
@@ -154,8 +155,8 @@ bool SSBDecoder::listen(std::shared_ptr<samples_t> &samples) {
     tmp[i] = buffer[i] + offset;
   }
   /* receive the remaining samples of the subframe */
-  if (rf_dev.receive(tmp, to_receive, &ts) == -1) {
-    LOG_ERROR("Error rf_dev->receive");
+  if (rf_dev->recv(tmp, to_receive, &ts) <= 0) {
+    LOG_ERROR("Error rf_dev->recv");
     return false;
   }
 

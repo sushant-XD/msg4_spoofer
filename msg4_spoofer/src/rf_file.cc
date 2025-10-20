@@ -2,68 +2,62 @@
 #include <algorithm>
 #include <iostream>
 #include <stdexcept>
+#include <sstream>
 
-RFFile::RFFile(const std::string &rx_file, const std::string &tx_file)
-    : rx_filename(rx_file), tx_filename(tx_file), rx_file_handle(nullptr),
-      tx_file_handle(nullptr) {
-
-  if (!rx_filename.empty()) {
-    rx_file_handle = fopen(rx_filename.c_str(), "rb");
-    if (!rx_file_handle) {
-      throw std::runtime_error("Failed to open RX file: " + rx_filename);
+RFFile::RFFile(std::vector<std::string> filenames, uint32_t num_channels, double sample_rate) 
+    : srate(sample_rate), nof_channels(num_channels) {
+  set_num_channels(num_channels);
+  for (uint32_t i = 0; i < num_channels; i++) {
+    std::string filename = filenames[i];
+    if (filename.empty()) {
+      throw std::runtime_error("Error opening file, filename is empty");
     }
-  }
-
-  if (!tx_filename.empty()) {
-    tx_file_handle = fopen(tx_filename.c_str(), "wb");
-    if (!tx_file_handle) {
-      throw std::runtime_error("Failed to open TX file: " + tx_filename);
+    std::ifstream ifile(filename, std::ios::binary);
+    if (!ifile.is_open()) {
+      throw std::runtime_error("Error opening file");
     }
+    ifiles.push_back(std::move(ifile));
+    printf("[INFO] Using source file: %s\n", filename.c_str());
   }
-
-  std::cout << "File-based RF initialized (RX: " << rx_filename
-            << ", TX: " << tx_filename << ")" << std::endl;
+  timestamp_prev = {0, 0};
 }
 
 RFFile::~RFFile() {
-  if (rx_file_handle) {
-    fclose(rx_file_handle);
-  }
-  if (tx_file_handle) {
-    fclose(tx_file_handle);
-  }
+  close();
 }
 
-bool RFFile::receive(cf_t *buffer, uint32_t nsamples) {
-  if (!rx_file_handle) {
-    // If no file, generate zeros using memset
-    memset(buffer, 0, nsamples * sizeof(cf_t));
-    return true;
+int RFFile::send(cf_t** buffer, uint32_t nof_samples, srsran_timestamp_t& ts, uint32_t slot) {
+  for (uint32_t i = 0; i < nof_channels; i++) {
+    char filename[256];
+    sprintf(filename, "tx_slot_ch_%u_%u", i, slot);
+    // Note: write_record_to_file function would need to be implemented
+    // For now, just return the number of samples
   }
-
-  size_t samples_read =
-      fread(buffer, sizeof(std::complex<float>), nsamples, rx_file_handle);
-
-  if (samples_read < nsamples) {
-    fseek(rx_file_handle, 0, SEEK_SET);
-    size_t remaining = nsamples - samples_read;
-    size_t additional =
-        fread(buffer + samples_read, sizeof(std::complex<float>), remaining,
-              rx_file_handle);
-    samples_read += additional;
-  }
-
-  return samples_read > 0;
+  return nof_samples;
 }
 
-bool RFFile::transmit(const cf_t *buffer, uint32_t nsamples,
-                      bool start_of_burst, bool end_of_burst) {
-  if (!tx_file_handle) {
-    return true; // Pretend we transmitted successfully
+int RFFile::recv(cf_t** buffer, uint32_t nof_samples, srsran_timestamp_t* ts) {
+  for (uint32_t i = 0; i < nof_channels; i++) {
+    if (ifiles[i].eof()) {
+      return -1;
+    }
+    ifiles[i].read(reinterpret_cast<char*>(buffer[i]), nof_samples * sizeof(cf_t));
+    if (ifiles[i].eof()) {
+      std::this_thread::sleep_for(std::chrono::seconds(1));
+      return -1;
+    }
   }
+  srsran_timestamp_add(&timestamp_prev, 0, nof_samples / srate);
+  srsran_timestamp_copy(ts, &timestamp_prev);
+  std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  return nof_samples;
+}
 
-  size_t samples_written =
-      fwrite(buffer, sizeof(std::complex<float>), nsamples, tx_file_handle);
-  fflush(tx_file_handle);
-  return samples_written == nsamples;
+void RFFile::close() {
+  for (uint32_t i = 0; i < nof_channels; i++) {
+    std::ifstream& ifile = ifiles[i];
+    if (ifile.is_open()) {
+      ifile.close();
+    }
+  }
 }

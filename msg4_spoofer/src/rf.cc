@@ -72,15 +72,56 @@ void RF::configure_device(const spoofer_config_t &config) {
   }
 }
 
-bool RF::receive(cf_t *buffer, uint32_t nsamples) {
-  int samples_received = srsran_rf_recv(&rf_device, buffer, nsamples, true);
-  return samples_received > 0;
+int RF::send(cf_t** buffer, uint32_t nof_samples, srsran_timestamp_t& ts, uint32_t slot) {
+  std::lock_guard<std::mutex> lock(mutex);
+  try {
+    int samples_sent = srsran_rf_send_timed_multi(
+        &rf_device, (void**)buffer, nof_samples, ts.full_secs, ts.frac_secs, true, true, true);
+    return samples_sent;
+  } catch (const std::exception& e) {
+    return -1;
+  }
 }
 
-bool RF::transmit(const cf_t *buffer, uint32_t nsamples, bool start_of_burst,
-                  bool end_of_burst) {
-  // srsran_rf_send doesn't take const, but doesn't modify the buffer
-  int samples_sent =
-      srsran_rf_send(&rf_device, const_cast<cf_t *>(buffer), nsamples, true);
-  return samples_sent > 0;
+int RF::recv(cf_t** buffer, uint32_t nof_samples, srsran_timestamp_t* ts) {
+  try {
+    int samples_recv =
+        srsran_rf_recv_with_time_multi(&rf_device, (void**)buffer, nof_samples, false, &ts->full_secs, &ts->frac_secs);
+    if (samples_recv == SRSRAN_ERROR) {
+      return -1;
+    }
+    return samples_recv;
+  } catch (const std::exception& e) {
+    return -1;
+  }
+}
+
+void RF::close() {
+  if (rf_device.dev) {
+    srsran_rf_close(&rf_device);
+  }
+}
+
+void RF::set_tx_gain(double gain) {
+  srsran_rf_set_tx_gain(&rf_device, gain);
+}
+
+void RF::set_rx_gain(double gain) {
+  srsran_rf_set_rx_gain(&rf_device, gain);
+}
+
+void RF::set_tx_srate(double sample_rate) {
+  srsran_rf_set_tx_srate(&rf_device, sample_rate);
+}
+
+void RF::set_rx_srate(double sample_rate) {
+  srsran_rf_set_rx_srate(&rf_device, sample_rate);
+}
+
+void RF::set_tx_freq(double freq) {
+  srsran_rf_set_tx_freq(&rf_device, 0, freq);
+}
+
+void RF::set_rx_freq(double freq) {
+  srsran_rf_set_rx_freq(&rf_device, 0, freq);
 }

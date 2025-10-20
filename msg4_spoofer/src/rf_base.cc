@@ -17,8 +17,8 @@ std::unique_ptr<RFBase> create_rf_instance(const spoofer_config_t& config) {
       if (rx_file.empty() && !config.rf.device_args.empty()) {
         rx_file = config.rf.device_args;
       }
-      std::string tx_file = rx_file + ".tx"; // Add .tx extension for TX file
-      return std::make_unique<RFFile>(rx_file, tx_file);
+      std::vector<std::string> filenames = {rx_file};
+      return std::make_unique<RFFile>(filenames, 1, config.rf.srate);
     } else {
       LOG_ERROR("Unknown/Unsupported RF device type: %s", device_type.c_str());
       return nullptr;
