@@ -4,78 +4,107 @@ ENV TZ="America/Chicago"
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 RUN apt update && apt -y upgrade && apt -y install git vim wget curl iproute2 \
-    cmake make ninja-build build-essential init gdb adb
+  cmake make ninja-build build-essential init gdb adb
 
 RUN apt install -y libuhd-dev uhd-host libfftw3-dev libmbedtls-dev libboost-program-options-dev libconfig++-dev libsctp-dev libyaml-cpp-dev pkg-config  libgtest-dev gcc g++ sudo
 
 # Add wdissector
 FROM base AS wdissector
 RUN apt -y install python3-pip python3-dev software-properties-common kmod bc gzip zstd flex bison \
-        pkg-config swig graphviz libglib2.0-dev libgcrypt20-dev libnl-genl-3-200 libgraphviz-dev liblz4-dev \
-        libsnappy-dev libgnutls28-dev libxml2-dev libnghttp2-dev libkrb5-dev libnl-3-dev libspandsp-dev \
-        libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libnl-genl-3-dev libnl-route-3-dev \
-        libnl-nf-3-dev libcap-dev libbrotli-dev libsmi2-dev liblua5.2-dev libc-ares-dev libsbc-dev \
-        libspeexdsp-dev libfreetype6-dev libxss1 libtbb-dev libnss3-dev libudev-dev libpulse-dev \
-        libpcre2-dev libasound2-dev libgl1-mesa-dev libssh-dev libmaxminddb-dev libopus-dev \
-        libusb-1.0-0 psmisc sshpass tcpdump libfmt-dev libsodium-dev xxd libc-bin libmbim-glib-dev \
-        libgoogle-glog-dev libzstd-dev libevent-dev libunwind-dev libdouble-conversion-dev libgflags-dev \
-        qtbase5-dev libqt5multimedia5 libqt5svg5 qttools5-dev qtmultimedia5-dev g++ software-properties-common \
-        kmod libglib2.0-dev libsnappy1v5 libsmi2ldbl liblua5.2-0 libc-ares2 libnl-route-3-200 libnl-genl-3-200 \
-        libfreetype6 graphviz libtbb12 libxss1 libnss3 libspandsp2 libsbc1 libbrotli1 libnghttp2-14 \
-        psmisc sshpass libpulse0 libpcre2-dev libmaxminddb0 libopus0 libspeex1 bc tcpdump libgflags2.2 \
-        libzstd1 libunwind8 libcap2 libspeexdsp1 libxtst6 libatk-bridge2.0-0 libusb-1.0-0 meson
+  pkg-config swig graphviz libglib2.0-dev libgcrypt20-dev libnl-genl-3-200 libgraphviz-dev liblz4-dev \
+  libsnappy-dev libgnutls28-dev libxml2-dev libnghttp2-dev libkrb5-dev libnl-3-dev libspandsp-dev \
+  libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libnl-genl-3-dev libnl-route-3-dev \
+  libnl-nf-3-dev libcap-dev libbrotli-dev libsmi2-dev liblua5.2-dev libc-ares-dev libsbc-dev \
+  libspeexdsp-dev libfreetype6-dev libxss1 libtbb-dev libnss3-dev libudev-dev libpulse-dev \
+  libpcre2-dev libasound2-dev libgl1-mesa-dev libssh-dev libmaxminddb-dev libopus-dev \
+  libusb-1.0-0 psmisc sshpass tcpdump libfmt-dev libsodium-dev xxd libc-bin libmbim-glib-dev \
+  libgoogle-glog-dev libzstd-dev libevent-dev libunwind-dev libdouble-conversion-dev libgflags-dev \
+  qtbase5-dev libqt5multimedia5 libqt5svg5 qttools5-dev qtmultimedia5-dev g++ software-properties-common \
+  kmod libglib2.0-dev libsnappy1v5 libsmi2ldbl liblua5.2-0 libc-ares2 libnl-route-3-200 libnl-genl-3-200 \
+  libfreetype6 graphviz libtbb12 libxss1 libnss3 libspandsp2 libsbc1 libbrotli1 libnghttp2-14 \
+  psmisc sshpass libpulse0 libpcre2-dev libmaxminddb0 libopus0 libspeex1 bc tcpdump libgflags2.2 \
+  libzstd1 libunwind8 libcap2 libspeexdsp1 libxtst6 libatk-bridge2.0-0 libusb-1.0-0 meson
 # Install llvm 15
 RUN wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && ./llvm.sh 15 && rm llvm.sh
-RUN arch=$(dpkg --print-architecture) \
-    && wget https://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1w-0+deb11u3_${arch}.deb \
-    && dpkg -i libssl1.1_1.1.1w-0+deb11u3_${arch}.deb \
-    && rm libssl1.1_1.1.1w-0+deb11u3_${arch}.deb
+# RUN arch=$(dpkg --print-architecture) \
+#     && wget https://security.debian.org/debian-security/pool/updates/main/o/openssl/libssl1.1_1.1.1w-0+deb11u3_${arch}.deb \
+#     && dpkg -i libssl1.1_1.1.1w-0+deb11u3_${arch}.deb \
+#     && rm libssl1.1_1.1.1w-0+deb11u3_${arch}.deb
 
-
-
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#         libssl1.1 \
+#     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && \
+  echo "deb http://security.ubuntu.com/ubuntu focal-security main" > /etc/apt/sources.list.d/focal-security.list && \
+  apt-get update && \
+  apt-get install -y --no-install-recommends \
+  libssl1.1 \
+  && rm /etc/apt/sources.list.d/focal-security.list \
+  && rm -rf /var/lib/apt/lists/*
 # Clone and build wdissector
 RUN git clone https://github.com/asset-group/5ghoul-5g-nr-attacks /root/wdissector
 WORKDIR /root/wdissector
 RUN ./scripts/apply_patches.sh 3rd-party
 RUN cd 3rd-party/ && git clone https://github.com/zeromq/libzmq.git --depth=1 && cd libzmq && \
-    ./autogen.sh && ./configure && make -j && make install && ldconfig
+  ./autogen.sh && ./configure && make -j && make install && ldconfig
 RUN cd 3rd-party/ && git clone https://github.com/zeromq/czmq.git --depth=1 && cd czmq && \
-        ./autogen.sh && ./configure && make -j && make install && ldconfig
+  ./autogen.sh && ./configure && make -j && make install && ldconfig
 RUN cd 3rd-party/ && git clone https://github.com/json-c/json-c.git --depth=1 && cd json-c && \
-    mkdir -p build && cd build && cmake ../ && make -j && make install && ldconfig
+  mkdir -p build && cd build && cmake ../ && make -j && make install && ldconfig
 RUN curl https://raw.githubusercontent.com/jckarter/tbb/refs/heads/master/include/tbb/tbb_stddef.h -o /usr/include/tbb/tbb_stddef.h
 RUN sed -i 's/\blong[[:space:]]\+gettid()/__pid_t gettid()/g' /root/wdissector/src/MiscUtils.hpp && \
-    sed -i 's/\bif\s*(\s*SWIG_EXIST\s*)/if(NOT SWIG_EXIST)/g' /root/wdissector/CMakeLists.txt && \
-    sed -i 's/exit 1/# exit 1/' /root/wdissector/build.sh 
+  sed -i 's/\bif\s*(\s*SWIG_EXIST\s*)/if(NOT SWIG_EXIST)/g' /root/wdissector/CMakeLists.txt && \
+  sed -i 's/exit 1/# exit 1/' /root/wdissector/build.sh 
 RUN cd /root/wdissector && ./build.sh all
 
 FROM wdissector AS sni5gect
-RUN apt install -y build-essential libfftw3-dev libmbedtls-dev libboost-program-options-dev libconfig++-dev libsctp-dev libzmq3-dev libliquid-dev libyaml-cpp-dev
+# RUN apt install -y build-essential libfftw3-dev libmbedtls-dev libboost-program-options-dev libconfig++-dev libsctp-dev libzmq3-dev libliquid-dev libyaml-cpp-dev
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+  build-essential \
+  libfftw3-dev \
+  libmbedtls-dev \
+  libboost-program-options-dev \
+  libconfig++-dev \
+  libsctp-dev \
+  libzmq3-dev \
+  libliquid-dev \
+  libyaml-cpp-dev \
+  && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /root/sni5gect
 
 # Install miniconda
 RUN arch=$(uname -m) && \
-    if [ "$arch" = "x86_64" ]; then arch="x86_64"; elif [ "$arch" = "aarch64" ]; then arch="aarch64"; fi && \
-    wget "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${arch}.sh" && \
-    bash "Miniconda3-latest-Linux-${arch}.sh" -p /root/.miniconda -b -u && \
-    /root/.miniconda/bin/conda init bash && \
-    rm "Miniconda3-latest-Linux-${arch}.sh"
+  if [ "$arch" = "x86_64" ]; then arch="x86_64"; elif [ "$arch" = "aarch64" ]; then arch="aarch64"; fi && \
+  wget "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${arch}.sh" && \
+  bash "Miniconda3-latest-Linux-${arch}.sh" -p /root/.miniconda -b -u && \
+  /root/.miniconda/bin/conda init bash && \
+  rm "Miniconda3-latest-Linux-${arch}.sh"
 
 # Install qcsuper
 RUN . "/root/.miniconda/etc/profile.d/conda.sh" && conda activate base && \
-    pip install pandas libtmux loguru seaborn jupyter ipython ipykernel pyserial pyusb crcmod pycrate && \
-    git clone https://github.com/P1sec/QCSuper /root/qcsuper && \
-    cd /root/qcsuper && pip3 install --upgrade https://github.com/P1sec/pycrate/archive/master.zip
-RUN apt install -y cutecom tmux
+  pip install pandas libtmux loguru seaborn jupyter ipython ipykernel pyserial pyusb crcmod pycrate && \
+  git clone https://github.com/P1sec/QCSuper /root/qcsuper && \
+  cd /root/qcsuper && pip3 install --upgrade https://github.com/P1sec/pycrate/archive/master.zip
+# RUN apt install -y cutecom tmux
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+  cutecom \
+  tmux \
+  && rm -rf /var/lib/apt/lists/*
 
+# Force rebuild - srsran.h first in msg3_ul_worker.h for extern C guards
 COPY . /root/sni5gect
 
 
 # build
-RUN cmake -DCMAKE_BUILD_TYPE=Debug \
-        -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE \
-        -DCMAKE_C_COMPILER=/usr/bin/clang-15 \
-        -DCMAKE_CXX_COMPILER=/usr/bin/clang++-15 \
-        --no-warn-unused-cli -B build -G Ninja && \
-        ninja -C build
+RUN rm -rf build && \
+  cmake -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_EXPORT_COMPILE_COMMANDS=TRUE \
+  -DCMAKE_C_COMPILER=/usr/bin/clang-15 \
+  -DCMAKE_CXX_COMPILER=/usr/bin/clang++-15 \
+  --no-warn-unused-cli -B build -G Ninja && \
+  ninja -C build

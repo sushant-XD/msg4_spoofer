@@ -11,8 +11,10 @@ services:
     network_mode: host
     volumes:
       - "/dev/:/dev/"
+      - "/usr/share/uhd/images:/usr/share/uhd/images"
     deploy:
       resources:
         reservations:
           cpus: '1'
           memory: 1G
+    command: tail -f /dev/null

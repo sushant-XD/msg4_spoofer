@@ -162,6 +162,12 @@ bool BroadCastWorker::decode_rar(srsran::unique_byte_buffer_t& data, uint32_t sl
 
   logger.info(CYAN "Found new UE with tc-rnti: %d slot: %u task: %u" RESET, tc_rnti, slot_idx, task_idx);
   std::array<uint8_t, srsran::mac_rar_subpdu_nr::UL_GRANT_NBITS> rar_grant = subpdu.get_ul_grant();
+  
+  // Trigger msg3 attack (flooding) before creating UE tracker
+  logger.warning(RED "*** TRIGGERING MSG3 ATTACK ***" RESET);
+  on_msg3_attack(tc_rnti, rar_grant, slot_idx);
+  
+  // Continue with normal UE tracking
   on_ue_found(tc_rnti, rar_grant, slot_idx, time_advance);
   return true;
 }

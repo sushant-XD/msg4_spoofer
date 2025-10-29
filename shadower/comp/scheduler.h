@@ -4,6 +4,8 @@
 #include "shadower/comp/trace_samples/trace_samples.h"
 #include "shadower/comp/ue_tracker.h"
 #include "shadower/comp/workers/broadcast_worker.h"
+#include "shadower/comp/workers/msg3_generator.h"
+#include "shadower/comp/workers/msg3_ul_worker.h"
 #include "shadower/comp/workers/wd_worker.h"
 #include "shadower/source/source.h"
 #include "shadower/utils/arg_parser.h"
@@ -52,6 +54,9 @@ private:
   void
   handle_new_ue_found(uint16_t rnti, std::array<uint8_t, 27UL>& grant, uint32_t current_slot, uint32_t time_advance);
 
+  /* handler for msg3 flooding attack when RAR is detected */
+  void handle_msg3_attack(uint16_t rnti, std::array<uint8_t, 27UL>& grant, uint32_t slot_idx);
+
   /* handler to apply MIB configuration to multiple workers */
   void handle_mib(srsran_mib_nr_t& mib_, uint32_t ncellid_);
 
@@ -62,6 +67,12 @@ private:
 
   /* list of UE trackers */
   std::vector<std::shared_ptr<UETracker> > ue_trackers = {};
+  
+  /* msg3 generator for attack */
+  std::unique_ptr<Msg3Generator> msg3_generator = nullptr;
+  
+  /* msg3 uplink workers for transmission */
+  std::vector<std::unique_ptr<Msg3ULWorker> > msg3_ul_workers = {};
 };
 
 #endif // SCHEDULER_H

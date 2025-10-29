@@ -1,5 +1,11 @@
+add_library(msg3_generator msg3_generator.cc msg3_generator.h)
+target_link_libraries(msg3_generator srsran_mac srslog)
+
+add_library(msg3_ul_worker msg3_ul_worker.cc msg3_ul_worker.h)
+target_link_libraries(msg3_ul_worker msg3_generator utils source srsran_mac srsran_phy srslog)
+
 add_library(broadcast_worker broadcast_worker.cc broadcast_worker.h)
-target_link_libraries(broadcast_worker utils srsran_mac)
+target_link_libraries(broadcast_worker msg3_generator utils srsran_mac)
 if(ENABLE_CUDA)
     target_link_libraries(broadcast_worker fft_processor)
 endif(ENABLE_CUDA)

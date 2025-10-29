@@ -1,5 +1,6 @@
 #ifndef BROADCAST_WORKER_H
 #define BROADCAST_WORKER_H
+#include "shadower/comp/workers/msg3_generator.h"
 #include "shadower/utils/arg_parser.h"
 #include "shadower/utils/constants.h"
 #include "shadower/utils/task.h"
@@ -39,6 +40,10 @@ public:
 
   /* handler function to apply the configuration from SIB1 */
   std::function<void(asn1::rrc_nr::sib1_s&)> on_sib1_found = [](asn1::rrc_nr::sib1_s&) {};
+
+  /* handler function for msg3 attack - triggers msg3 flooding when RAR is detected */
+  std::function<void(uint16_t, std::array<uint8_t, 27UL>&, uint32_t)> on_msg3_attack =
+      [](uint16_t, std::array<uint8_t, 27UL>&, uint32_t) {};
 
   srsran_mib_nr_t      mib  = {}; // Master Information Block configuration
   asn1::rrc_nr::sib1_s sib1 = {}; // System Information Block 1 configuration

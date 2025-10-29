@@ -31,3 +31,5 @@ evaluation_backup/
 *.so
 fdd/
 tdd/
+.cache/
+

