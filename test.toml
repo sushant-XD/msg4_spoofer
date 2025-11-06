@@ -16,7 +16,6 @@ device_name = "uhd"
 device_args = "type=b200"
 
 # device_name = zmq
-
 # file_path = "/home/sushant/Wireless/msg4_spoofer/iq.fc32"
 
 [prach]
@@ -27,4 +26,13 @@ root_sequence_index = 1
 zero_correlation_zone = 0
 num_ra_preambles = 64
 time_delay = 1 # in millisecond
+
+[influxdb]
+enabled = true
+host = "localhost"
+port = 8086
+org = "rtu"
+bucket = "rtusystem"
+token = "605bc59413b7d5457d181ccf20f9fda15693f81b068d70396cc183081b264f3b"
+period_secs = 0.5
 

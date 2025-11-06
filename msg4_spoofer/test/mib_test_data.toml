@@ -1,0 +1,120 @@
+# InfluxDB MIB Test Data Configuration
+# This file is used by influxdb_data_generate to populate InfluxDB with test MIB data
+
+[influxdb]
+enabled = true
+host = ""
+port = 8086
+org = ""
+bucket = ""
+token = ""
+
+[test]
+# Data identifier tag for the test data
+data_id = ""
+
+# Interval between publishing entry
+publish_interval_ms = 1000
+
+# If true, continuously republish data in a loop
+# If false, publish once and exit
+continuous = false
+
+[[sib_data]]
+config_index = 0
+hs_flag = 0
+freq_offset = 0
+root_seq_idx = 0
+zero_correlation_zone = 0
+
+# Array of MIB data entries to publish
+[[mib_data]]
+sfn = 512                        # System Frame Number
+ssb_idx = 4                      # SSB index
+hrf = false                      # Half Radio Frame
+scs_common = 1                   # Subcarrier Spacing Common (0=15kHz, 1=30kHz)
+ssb_offset = 10                  # SSB offset
+dmrs_typeA_pos = 2               # DMRS Type A position
+coreset0_idx = 8                 # CORESET0 index
+ss0_idx = 0                      # SS0 index
+cell_barred = false              # Cell barred indicator
+intra_freq_reselection = true    # Intra-frequency reselection
+spare = 0                        # Spare bits
+
+[[mib_data]]
+sfn = 768
+ssb_idx = 7
+hrf = true
+scs_common = 0
+ssb_offset = 15
+dmrs_typeA_pos = 3
+coreset0_idx = 12
+ss0_idx = 1
+cell_barred = false
+intra_freq_reselection = true
+spare = 0
+
+[[mib_data]]
+sfn = 1024
+ssb_idx = 2
+hrf = false
+scs_common = 1
+ssb_offset = 8
+dmrs_typeA_pos = 2
+coreset0_idx = 6
+ss0_idx = 0
+cell_barred = false
+intra_freq_reselection = true
+spare = 0
+
+[[mib_data]]
+sfn = 256
+ssb_idx = 5
+hrf = true
+scs_common = 1
+ssb_offset = 12
+dmrs_typeA_pos = 2
+coreset0_idx = 10
+ss0_idx = 1
+cell_barred = false
+intra_freq_reselection = false
+spare = 0
+
+[[mib_data]]
+sfn = 128
+ssb_idx = 3
+hrf = false
+scs_common = 0
+ssb_offset = 5
+dmrs_typeA_pos = 3
+coreset0_idx = 4
+ss0_idx = 0
+cell_barred = false
+intra_freq_reselection = true
+spare = 0
+
+[[mib_data]]
+sfn = 128
+ssb_idx = 3
+hrf = false
+scs_common = 0
+ssb_offset = 5
+dmrs_typeA_pos = 3
+coreset0_idx = 4
+ss0_idx = 0
+cell_barred = false
+intra_freq_reselection = true
+spare = 0
+
+[[mib_data]]
+sfn = 128
+ssb_idx = 3
+hrf = false
+scs_common = 0
+ssb_offset = 5
+dmrs_typeA_pos = 3
+coreset0_idx = 4
+ss0_idx = 0
+cell_barred = false
+intra_freq_reselection = true
+spare = 0

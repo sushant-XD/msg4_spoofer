@@ -1,7 +1,9 @@
 #pragma once
 
 #include "config.h"
+#include <complex>
 #include <memory>
+#include <vector>
 
 class RFBase {
 public:

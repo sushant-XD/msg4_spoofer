@@ -34,3 +34,23 @@ target_link_libraries(msg4_spoofer PRIVATE
 
 install(TARGETS msg4_spoofer DESTINATION /usr/local/bin OPTIONAL)
 
+# Test executable for InfluxDB data generation
+add_executable(influxdb_data_generate 
+    test/influxdb_data_generate.cpp
+)
+
+set_target_properties(influxdb_data_generate PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED YES
+    CXX_EXTENSIONS NO
+    LINKER_LANGUAGE CXX
+)
+
+target_include_directories(influxdb_data_generate PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/${SPOOFER_HDR_DIR}"
+)
+
+target_link_libraries(influxdb_data_generate PRIVATE
+    pthread
+)
+
