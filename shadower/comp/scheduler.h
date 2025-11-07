@@ -9,15 +9,20 @@
 #include "shadower/source/source.h"
 #include "shadower/utils/arg_parser.h"
 #include "shadower/utils/safe_queue.h"
+#include "shadower/utils/task.h"
 #include "shadower/utils/thread_pool.h"
 #include "srsran/common/threads.h"
 #include "srsran/srslog/srslog.h"
 #include <atomic>
+#include <memory>
+
+class PrachFlooder;
+
 class Scheduler : public srsran::thread
 {
 public:
   Scheduler(ShadowerConfig& config_, Source* source_, Syncer* syncer_, create_exploit_t create_exploit_);
-  ~Scheduler() override = default;
+  ~Scheduler() override;
 
 private:
   srslog::basic_logger&            logger = srslog::fetch_basic_logger("Scheduler", false);
@@ -38,6 +43,8 @@ private:
 
   std::vector<std::shared_ptr<BroadCastWorker> > broadcast_workers = {};
   std::vector<std::shared_ptr<InfluxWorker> > influx_workers = {};
+  std::unique_ptr<PrachFlooder> prach_flooder;
+  bool                          prach_flooder_started = false;
 
   void run_thread() override;
 

@@ -1,4 +1,5 @@
 #include "shadower/comp/scheduler.h"
+#include "shadower/comp/prach_flooder.h"
 
 Scheduler::Scheduler(ShadowerConfig& config_, Source* source_, Syncer* syncer_, create_exploit_t create_exploit_) :
   config(config_), source(source_), syncer(syncer_), create_exploit(create_exploit_), srsran::thread("Scheduler")
@@ -29,6 +30,9 @@ Scheduler::Scheduler(ShadowerConfig& config_, Source* source_, Syncer* syncer_, 
   wd_worker = new WDWorker(config.duplex_mode, config.worker_log_level);
   /* initialize thread pool */
   thread_pool = new ThreadPool(config.pool_size);
+  if (config.prach_flood_only) {
+    prach_flooder = std::make_unique<PrachFlooder>(logger);
+  }
   /* Initialize a list of UE trackers before start */
   pre_initialize_ue();
 
@@ -72,9 +76,22 @@ Scheduler::Scheduler(ShadowerConfig& config_, Source* source_, Syncer* syncer_, 
 
 }
 
+Scheduler::~Scheduler()
+{
+  running.store(false);
+  task_queue.push(std::shared_ptr<Task>());
+  if (prach_flooder) {
+    prach_flooder->stop();
+  }
+  prach_flooder_started = false;
+}
+
 /* Initialize a list of UE trackers before start */
 void Scheduler::pre_initialize_ue()
 {
+  if (config.prach_flood_only) {
+    return;
+  }
   for (uint32_t i = 0; i < config.num_ues; i++) {
     /* Create new UE tracker */
     std::shared_ptr<UETracker> ue = std::make_shared<UETracker>(source, syncer, wd_worker, config, create_exploit);
@@ -94,6 +111,10 @@ void Scheduler::syncer_exit_handler()
   std::this_thread::sleep_for(std::chrono::seconds(5));
   logger.error(RED "Syncer error event" RESET);
   running.store(false);
+  if (prach_flooder) {
+    prach_flooder->stop();
+    prach_flooder_started = false;
+  }
   thread_cancel();
 }
 
@@ -109,6 +130,9 @@ void Scheduler::handle_new_ue_found(uint16_t                   rnti,
                                     uint32_t                   current_slot,
                                     uint32_t                   time_advance)
 {
+  if (config.prach_flood_only) {
+    return;
+  }
   std::shared_ptr<UETracker> selected_ue = nullptr;
   /* select a UE tracker that is not activated */
   for (uint32_t i = 0; i < config.num_ues; i++) {
@@ -162,6 +186,20 @@ void Scheduler::handle_sib1(asn1::rrc_nr::sib1_s& sib1_)
 		thread_pool->enqueue([worker]() { worker->work(); });
 	}
   logger.info(CYAN "SIB1 applied to all workers" RESET);
+
+  if (config.prach_flood_only) {
+    if (prach_flooder && !prach_flooder_started) {
+      if (!prach_flooder->configure(phy_cfg, config)) {
+        logger.error("Failed to configure PRACH flooder");
+      } else if (!prach_flooder->start(source)) {
+        logger.error("Failed to start PRACH flooder");
+      } else {
+        prach_flooder_started = true;
+        logger.info("PRACH flooder active");
+      }
+    }
+    return;
+  }
 
   // Update cell status
   asn1::rrc_nr::plmn_id_info_s& plmn = sib1.cell_access_related_info.plmn_id_list[0];

@@ -94,6 +94,11 @@ struct ShadowerConfig {
   // Recorder configurations
   bool enable_recorder = false; // Enable recording the IQ samples to subframes
 
+  // PRACH flooder configuration
+  bool    prach_flood_only      = false;
+  uint32_t prach_flood_preamble = 0;
+  double  prach_flood_period_ms = 1.0;
+
   // Logger configurations
   srslog::basic_levels log_level        = srslog::basic_levels::info;
   srslog::basic_levels bc_worker_level  = srslog::basic_levels::info;

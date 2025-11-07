@@ -255,6 +255,23 @@ int parse_args(ShadowerConfig& config, int argc, char* argv[])
     config.worker_log_level      = srslog::str_to_basic_level(worker_log_level);
   }
 
+  if (root["prach_flood"]) {
+    auto prach_flood          = root["prach_flood"];
+    config.prach_flood_only   = node_as<bool>(prach_flood, "enable", false);
+    config.prach_flood_preamble =
+        node_as<uint32_t>(prach_flood, "preamble_index", config.prach_flood_preamble);
+    config.prach_flood_period_ms =
+        node_as<double>(prach_flood, "period_ms", config.prach_flood_period_ms);
+  } else {
+    config.prach_flood_only      = node_as<bool>(root, "prach_flood_only", config.prach_flood_only);
+    config.prach_flood_preamble  = node_as<uint32_t>(root, "prach_flood_preamble", config.prach_flood_preamble);
+    config.prach_flood_period_ms = node_as<double>(root, "prach_flood_period_ms", config.prach_flood_period_ms);
+  }
+  if (config.prach_flood_period_ms <= 0.0) {
+    config.prach_flood_period_ms = 1.0;
+  }
+  std::cout << "PRACH flood mode: " << (config.prach_flood_only ? "true" : "false") << std::endl;
+
   config.exploit_module = node_as<std::string>(root, "exploit", "");
   printf("Exploit module: %s\n", config.exploit_module.c_str());
   assert(!config.exploit_module.empty());
