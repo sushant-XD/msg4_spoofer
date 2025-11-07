@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
   // Initialize InfluxDB client if enabled
   std::unique_ptr<InfluxDBClient> influxdb_client = nullptr;
   cell_info_t cell_info = {};
-  prach_config_t prach_config_to_use = conf.prach;
+  prach_config_t prach_cfg_from_influx = conf.prach;
   int nof_prb = conf.rf.nof_prb;
 
   if (conf.influxdb.enabled) {
@@ -53,8 +53,9 @@ int main(int argc, char *argv[]) {
 
     // Check if connection was successful
     if (!influxdb_client->is_connected()) {
-      LOG_ERROR("Failed to connect to InfluxDB. Please check your configuration "
-                "and InfluxDB server status.");
+      LOG_ERROR(
+          "Failed to connect to InfluxDB. Please check your configuration "
+          "and InfluxDB server status.");
       return EXIT_FAILURE;
     }
 
@@ -71,19 +72,19 @@ int main(int argc, char *argv[]) {
         // We have all required data
         LOG_INFO("Successfully retrieved all required cell data from InfluxDB");
         InfluxDBClient::display_cell_info(cell_info);
-        
+
         // Use InfluxDB data for PRACH configuration
-        prach_config_to_use = cell_info.prach;
-        
+        prach_cfg_from_influx = cell_info.prach;
+
         // Preserve time_delay from config as it's not in InfluxDB
-        prach_config_to_use.time_delay = conf.prach.time_delay;
-        
+        prach_cfg_from_influx.time_delay = conf.prach.time_delay;
+
         // Use band info for nof_prb if available
         if (cell_info.band.nof_prb > 0) {
           nof_prb = cell_info.band.nof_prb;
           LOG_INFO("Using nof_prb from InfluxDB: %d", nof_prb);
         }
-        
+
         data_retrieved = true;
       } else {
         // Missing data - show what's missing
@@ -98,7 +99,7 @@ int main(int argc, char *argv[]) {
           LOG_ERROR("  - Band information not available");
         }
         LOG_INFO("Retrying in 1 second...");
-        
+
         // Wait 1 second before retrying
         std::this_thread::sleep_for(std::chrono::seconds(1));
       }
@@ -111,12 +112,12 @@ int main(int argc, char *argv[]) {
   srsran_prach_cfg_t prach_cfg;
 
   prach_cfg.is_nr = true;
-  prach_cfg.config_idx = prach_config_to_use.config_idx;
+  prach_cfg.config_idx = prach_cfg_from_influx.config_idx;
   prach_cfg.hs_flag = false; // NOTE: hardcoded to false for now
-  prach_cfg.freq_offset = prach_config_to_use.freq_offset;
-  prach_cfg.root_seq_idx = prach_config_to_use.root_seq_idx;
-  prach_cfg.zero_corr_zone = prach_config_to_use.zero_corr_zone;
-  prach_cfg.num_ra_preambles = prach_config_to_use.num_ra_preambles;
+  prach_cfg.freq_offset = prach_cfg_from_influx.freq_offset;
+  prach_cfg.root_seq_idx = prach_cfg_from_influx.root_seq_idx;
+  prach_cfg.zero_corr_zone = prach_cfg_from_influx.zero_corr_zone;
+  prach_cfg.num_ra_preambles = prach_cfg_from_influx.num_ra_preambles;
 
   LOG_INFO("Using PRACH Configuration:");
   LOG_INFO("  Config Index: %d", prach_cfg.config_idx);
@@ -146,12 +147,12 @@ int main(int argc, char *argv[]) {
   if (conf.influxdb.enabled && cell_info.band.valid) {
     if (cell_info.band.ul_freq > 0) {
       conf.rf.frequency = cell_info.band.ul_freq;
-      LOG_INFO("Using uplink frequency from InfluxDB: %.3f MHz", 
+      LOG_INFO("Using uplink frequency from InfluxDB: %.3f MHz",
                conf.rf.frequency / 1e6);
     }
     if (cell_info.band.sample_rate > 0) {
       conf.rf.srate = cell_info.band.sample_rate;
-      LOG_INFO("Using sample rate from InfluxDB: %.2f MHz", 
+      LOG_INFO("Using sample rate from InfluxDB: %.2f MHz",
                conf.rf.srate / 1e6);
     }
   }
@@ -165,12 +166,14 @@ int main(int argc, char *argv[]) {
 
   size_t preamble_len = prach.N_seq + prach.N_cp;
 
-  std::vector<cf_t *> preambles(prach_config_to_use.num_ra_preambles);
-  LOG_INFO("Generating %d PRACH preambles...", prach_config_to_use.num_ra_preambles);
+  std::vector<cf_t *> preambles(prach_cfg_from_influx.num_ra_preambles);
+  LOG_INFO("Generating %d PRACH preambles...",
+           prach_cfg_from_influx.num_ra_preambles);
   // generate all possible preamble combinations
   for (int i = 0; i < preambles.size(); ++i) {
     preambles[i] = srsran_vec_cf_malloc(preamble_len);
-    srsran_prach_gen(&prach, i, prach_config_to_use.freq_offset, preambles[i]);
+    srsran_prach_gen(&prach, i, prach_cfg_from_influx.freq_offset,
+                     preambles[i]);
   }
   LOG_INFO("PRACH preambles generated successfully");
 
@@ -192,11 +195,12 @@ int main(int argc, char *argv[]) {
       return CONFIG_ERROR;
     }
 
-    current_seq_idx = (current_seq_idx + 1) % prach_config_to_use.num_ra_preambles;
-    if (prach_config_to_use.time_delay > 0) {
-      std::this_thread::sleep_for(
-          std::chrono::milliseconds(prach_config_to_use.time_delay));
-    }
+    current_seq_idx =
+        (current_seq_idx + 1) % prach_cfg_from_influx.num_ra_preambles;
+    // if (prach_cfg_from_influx.time_delay > 0) {
+    //   std::this_thread::sleep_for(
+    //       std::chrono::milliseconds(prach_cfg_from_influx.time_delay));
+    // }
   }
 
   // free after use
